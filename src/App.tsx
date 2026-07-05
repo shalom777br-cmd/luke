@@ -377,7 +377,7 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono font-medium tracking-wider text-teal-600 uppercase bg-teal-50 px-2 py-0.5 rounded-md">ルカ / Memory Compiler</span>
               </div>
-              <h1 className="text-lg font-sans font-bold text-slate-900 tracking-tight">記憶ゲートウェイ 共有レイヤー</h1>
+              <h1 className="text-lg font-sans font-bold text-slate-900 tracking-tight">AIに重要事項を覚えてもらうアプリ</h1>
             </div>
           </div>
 
