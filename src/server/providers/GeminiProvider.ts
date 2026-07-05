@@ -1,0 +1,150 @@
+import { GoogleGenAI, Type } from '@google/genai';
+import { BaseProvider } from './BaseProvider.js';
+import { StructuredMemory, MemoryEntry } from '../../types.js';
+
+export class GeminiProvider extends BaseProvider {
+  private ai: GoogleGenAI;
+
+  constructor() {
+    super();
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.warn('Warning: GEMINI_API_KEY is not defined in the environment variables.');
+    }
+    this.ai = new GoogleGenAI({
+      apiKey: apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+  }
+
+  async convertToStructured(rawInput: string, refDate?: string): Promise<StructuredMemory> {
+    const todayStr = refDate || new Date().toISOString();
+
+    const responseSchema = {
+      type: Type.OBJECT,
+      properties: {
+        category: {
+          type: Type.STRING,
+          description: "Must be one of: 'task', 'event', 'note', 'health', 'finance', 'relationship', 'faith', 'other'",
+        },
+        summary: {
+          type: Type.STRING,
+          description: "A Japanese summary of about 20 to 40 characters.",
+        },
+        entities: {
+          type: Type.OBJECT,
+          properties: {
+            people: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "Array of names of people mentioned. Empty array if none.",
+            },
+            places: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "Array of places, locations or venues mentioned. Empty array if none.",
+            },
+            dates: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "Array of temporal terms mentioned (e.g. 'tomorrow', 'next week', 'July 5th'). Empty array if none.",
+            },
+          },
+          required: ['people', 'places', 'dates'],
+        },
+        occurred_at: {
+          type: Type.STRING,
+          description: "Precise ISO8601 string of the event or task date. Try to infer using the reference current time: " + todayStr + ". If relative dates are mentioned, resolve them. If no specific time or date is mentioned, use null.",
+        },
+        tags: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description: "Array of 1 to 4 relevant tags in Japanese. Avoid duplicates.",
+        },
+        importance: {
+          type: Type.INTEGER,
+          description: "Inferred importance from 1 (lowest) to 5 (highest). Defaults to 3.",
+        },
+        action_required: {
+          type: Type.BOOLEAN,
+          description: "True if the memory is an actionable task, todo, or requires future action. False otherwise.",
+        },
+      },
+      required: ['category', 'summary', 'entities', 'occurred_at', 'tags', 'importance', 'action_required'],
+    };
+
+    try {
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: `Please convert the following natural language memory or voice log into our AI common language JSON structure.
+Reference datetime to resolve relative date indicators: ${todayStr}
+
+Natural language raw input:
+"${rawInput}"`,
+        config: {
+          systemInstruction: 'You are Ruka\'s Memory Gateway Engine. You specialize in compiling unstructured voice and text logs into highly precise, structured schemas. Strictly output JSON conforming to the schema. Ensure Category is exactly one of the eight specified categories.',
+          responseMimeType: 'application/json',
+          responseSchema: responseSchema,
+        },
+      });
+
+      const text = response.text;
+      if (!text) {
+        throw new Error('Gemini returned an empty response');
+      }
+
+      const structured = JSON.parse(text.trim()) as StructuredMemory;
+      return structured;
+    } catch (err) {
+      console.error('Gemini structured conversion failed:', err);
+      // Let the caller handle or fall back
+      throw err;
+    }
+  }
+
+  async answerFromEntries(queryText: string, entries: MemoryEntry[]): Promise<string> {
+    const contextText = entries
+      .map((entry, idx) => {
+        return `[記録 #${idx + 1}]
+日時: ${entry.occurred_at || entry.created_at}
+カテゴリ: ${entry.category}
+要約: ${entry.summary}
+タグ: ${entry.tags.join(', ')}
+重要度: ${entry.importance}
+本文: ${entry.raw_input}
+エンティティ: ${JSON.stringify(entry.structured.entities)}
+`;
+      })
+      .join('\n\n');
+
+    const prompt = `ユーザーからの質問: "${queryText}"
+
+以下の該当するメモリ記録に基づいて、丁寧でまとまりのある日本語の回答を作成してください。
+質問に直接答える形で、日付や人物などを引用しつつ、分かりやすく整理して伝えてください。
+回答は憶測を含めず、提示された記録に記載されている事実のみに基づいてください。
+関連する記録が全くない場合は、その旨を丁寧に述べてください。
+
+【メモリ記録】
+${contextText || '該当する記録が見つかりませんでした。'}
+`;
+
+    try {
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: prompt,
+        config: {
+          systemInstruction: 'You are Ruka (ルカ), an AI Companion and Shared Memory Compiler. Synthesize the provided historical logs to answer the user\'s natural language query truthfully and concisely in Japanese. Use Markdown for layout if appropriate.',
+        },
+      });
+
+      return response.text || '回答を作成できませんでした。';
+    } catch (err) {
+      console.error('Gemini Q&A answer generation failed:', err);
+      return 'AI回答生成中にエラーが発生しました。記録一覧をご確認ください。';
+    }
+  }
+}

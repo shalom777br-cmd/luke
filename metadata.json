@@ -1,0 +1,6 @@
+{
+  "name": "共有記憶層作成アプリ『ルカ』",
+  "description": "自然言語を構造化されたAI共通言語に変換して蓄積・検索する、共有記憶層(Memory Compiler)作成システム。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
