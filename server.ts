@@ -23,11 +23,16 @@ async function startServer() {
   const provider = getProvider();
 
   // API Route: Get Database and LLM system status
-  app.get('/api/status', (req, res) => {
+  app.get('/api/status', async (req, res) => {
     const hasGeminiKey = !!process.env.GEMINI_API_KEY;
     const hasAnthropicKey = !!process.env.ANTHROPIC_API_KEY;
     const activeProvider = process.env.LLM_PROVIDER || 'gemini';
     const hasSupabase = db.mode === 'supabase';
+
+    let tableStatus = { exists: false, error: null as string | null };
+    if (hasSupabase) {
+      tableStatus = await db.checkTableStatus();
+    }
 
     res.json({
       db_mode: db.mode,
@@ -37,6 +42,7 @@ async function startServer() {
         anthropic_api_key_configured: hasAnthropicKey,
         supabase_configured: hasSupabase,
       },
+      table_status: tableStatus,
     });
   });
 

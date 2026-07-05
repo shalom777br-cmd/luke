@@ -38,10 +38,10 @@ import {
 
 // Supported profiles to showcase the "shared" context capability
 const USER_PROFILES = [
-  { id: 'temote-main', name: 'テモテ共有コア (Timothee)', color: 'bg-emerald-500' },
-  { id: 'concertante-log', name: 'CONCERTANTE 共同設計', color: 'bg-indigo-500' },
-  { id: '050call-voice', name: '050Call 通話音声ログ', color: 'bg-amber-500' },
-  { id: 'personal-scratch', name: '個人用メモレイヤー', color: 'bg-rose-500' }
+  { id: '00000000-0000-0000-0000-000000000001', name: 'テモテ共有コア (Timothee)', color: 'bg-emerald-500' },
+  { id: '00000000-0000-0000-0000-000000000002', name: 'CONCERTANTE 共同設計', color: 'bg-indigo-500' },
+  { id: '00000000-0000-0000-0000-000000000003', name: '050Call 通話音声ログ', color: 'bg-amber-500' },
+  { id: '00000000-0000-0000-0000-000000000004', name: '個人用メモレイヤー', color: 'bg-rose-500' }
 ];
 
 const CATEGORY_DETAILS: Record<MemoryCategory, { label: string; icon: any; color: string; bg: string; border: string }> = {
@@ -60,7 +60,16 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(USER_PROFILES[0]);
   
   // App system status
-  const [systemStatus, setSystemStatus] = useState({
+  const [systemStatus, setSystemStatus] = useState<{
+    db_mode: string;
+    active_llm_provider: string;
+    secrets: {
+      gemini_api_key_configured: boolean;
+      anthropic_api_key_configured: boolean;
+      supabase_configured: boolean;
+    };
+    table_status?: { exists: boolean; error: string | null };
+  }>({
     db_mode: 'local',
     active_llm_provider: 'gemini',
     secrets: {
@@ -427,6 +436,144 @@ export default function App() {
 
       {/* Main Container Layout */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        {/* Supabase Table Missing or Schema Mismatch Alert */}
+        {systemStatus.db_mode === 'supabase' && systemStatus.table_status && (!systemStatus.table_status.exists || systemStatus.table_status.error === 'schema_invalid_user_id_uuid') && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8 p-6 bg-amber-50 border border-amber-300 rounded-2xl shadow-xs"
+          >
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-amber-100 rounded-xl text-amber-800 flex-shrink-0">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <div className="flex-1 space-y-3">
+                <h3 className="text-sm font-bold text-amber-900">
+                  {systemStatus.table_status.error === 'schema_invalid_user_id_uuid' 
+                    ? '【重要】Supabase の user_id 列のデータ型修正が必要です' 
+                    : '【重要】Supabase のテーブル設定が必要です'}
+                </h3>
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  {systemStatus.table_status.error === 'schema_invalid_user_id_uuid' ? (
+                    <span>
+                      Supabase内に <code>memory_entries</code> テーブルは存在しますが、<code>user_id</code> 列が <code>uuid</code> 型になっています。
+                      本アプリは UUID 形式のプロファイル ID を使用することで、テーブル定義が <code>uuid</code> 型であっても <code>text</code> 型であっても正常に動作するように最適化されています。
+                      安全のためにデータベース再接続や再確認を行ってください。
+                    </span>
+                  ) : (
+                    <span>
+                      Supabaseへの接続には成功していますが、データを格納するための <code>memory_entries</code> テーブルがデータベースに作成されていません。
+                      そのため、現在は自動的に<strong>ローカル保存モード（データ損失を防ぐための一時保存）</strong>にフォールバックして動作しています。
+                    </span>
+                  )}
+                </p>
+
+                <div className="text-xs text-amber-900 font-medium pt-1">
+                  解決方法: Supabaseのダッシュボードを開き、サイドバーの <strong>「SQL Editor」</strong>（クエリシート）で以下のSQLを貼り付けて実行（Run）してください。
+                </div>
+
+                {/* SQL Codeblock Selection */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                  <div className="space-y-2">
+                    <div className="text-xs font-bold text-slate-700 flex justify-between items-center">
+                      <span>方法A: 既存テーブルの型を変更（データを保持）</span>
+                      <button
+                        onClick={() => {
+                          const sql = `alter table memory_entries alter column user_id type text;`;
+                          navigator.clipboard.writeText(sql);
+                          showToast('success', '方法AのSQLをコピーしました！');
+                        }}
+                        className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 text-[10px] font-semibold rounded transition-all active:scale-95"
+                      >
+                        コピー
+                      </button>
+                    </div>
+                    <pre className="p-3 bg-slate-900 text-slate-100 rounded-xl text-[11px] font-mono overflow-x-auto leading-relaxed border border-slate-800 min-h-[80px]">
+{`-- user_idカラムの型をuuidからtextに変更
+alter table memory_entries 
+  alter column user_id type text;`}
+                    </pre>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-xs font-bold text-slate-700 flex justify-between items-center">
+                      <span>方法B: テーブルを再作成（データをリセット）</span>
+                      <button
+                        onClick={() => {
+                          const sql = `-- テーブルを一度削除して再作成
+drop table if exists memory_entries cascade;
+
+create table memory_entries (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null,
+  raw_input text not null,
+  input_type text not null check (input_type in ('voice','text')),
+  category text,
+  summary text,
+  structured jsonb not null,
+  tags text[] default '{}',
+  search_text text not null,
+  importance smallint default 3,
+  occurred_at timestamptz,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_memory_entries_user on memory_entries (user_id);
+create index if not exists idx_memory_entries_category on memory_entries (user_id, category);`;
+                          navigator.clipboard.writeText(sql);
+                          showToast('success', '方法BのSQLをコピーしました！');
+                        }}
+                        className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 text-[10px] font-semibold rounded transition-all active:scale-95"
+                      >
+                        コピー
+                      </button>
+                    </div>
+                    <pre className="p-3 bg-slate-900 text-slate-100 rounded-xl text-[11px] font-mono overflow-x-auto max-h-40 leading-relaxed border border-slate-800">
+{`-- 1. テーブルを完全に再作成
+drop table if exists memory_entries cascade;
+
+create table memory_entries (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null,
+  raw_input text not null,
+  input_type text not null check (input_type in ('voice','text')),
+  category text,
+  summary text,
+  structured jsonb not null,
+  tags text[] default '{}',
+  search_text text not null,
+  importance smallint default 3,
+  occurred_at timestamptz,
+  created_at timestamptz default now()
+);
+
+-- 2. 検索用のインデックス作成
+create index if not exists idx_memory_entries_user on memory_entries (user_id);
+create index if not exists idx_memory_entries_category on memory_entries (user_id, category);`}
+                    </pre>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-4 pt-2 border-t border-amber-200">
+                  <button
+                    onClick={async () => {
+                      await fetchSystemStatus();
+                      await handleSearch();
+                      showToast('info', 'データベース接続ステータスを再検証しました。');
+                    }}
+                    className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin-once" />
+                    <span>実行完了後に再チェック</span>
+                  </button>
+                  <span className="text-[11px] text-amber-700">※SQL実行後、このボタンを押して状態を更新してください。</span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
           {/* Left Side Panel - Ingestion (4 cols) */}

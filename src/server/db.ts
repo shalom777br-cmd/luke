@@ -20,7 +20,28 @@ if (!fs.existsSync(LOCAL_DB_PATH)) {
 function readLocalDb(): MemoryEntry[] {
   try {
     const raw = fs.readFileSync(LOCAL_DB_PATH, 'utf-8');
-    return JSON.parse(raw);
+    const entries = JSON.parse(raw) as MemoryEntry[];
+    let migrated = false;
+    const updated = entries.map(entry => {
+      if (entry.user_id === 'temote-main') {
+        entry.user_id = '00000000-0000-0000-0000-000000000001';
+        migrated = true;
+      } else if (entry.user_id === 'concertante-log') {
+        entry.user_id = '00000000-0000-0000-0000-000000000002';
+        migrated = true;
+      } else if (entry.user_id === '050call-voice') {
+        entry.user_id = '00000000-0000-0000-0000-000000000003';
+        migrated = true;
+      } else if (entry.user_id === 'personal-scratch') {
+        entry.user_id = '00000000-0000-0000-0000-000000000004';
+        migrated = true;
+      }
+      return entry;
+    });
+    if (migrated) {
+      writeLocalDb(updated);
+    }
+    return updated;
   } catch (error) {
     console.error('Failed to read local DB, initializing empty array', error);
     return [];
@@ -39,6 +60,7 @@ function writeLocalDb(entries: MemoryEntry[]): void {
 export class MemoryGatewayDb {
   private supabase: SupabaseClient | null = null;
   public mode: 'supabase' | 'local' = 'local';
+  private isTableVerified: boolean | null = null;
 
   constructor() {
     const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -59,9 +81,70 @@ export class MemoryGatewayDb {
     }
   }
 
+  // Ensure and check table exists status dynamically to avoid relation errors
+  async ensureTableExists(): Promise<boolean> {
+    if (this.mode !== 'supabase' || !this.supabase) {
+      return false;
+    }
+    if (this.isTableVerified !== null) {
+      return this.isTableVerified;
+    }
+    const status = await this.checkTableStatus();
+    this.isTableVerified = status.exists && status.isSchemaValid !== false;
+    return this.isTableVerified;
+  }
+
+  // Check if the memory_entries table is correctly provisioned
+  async checkTableStatus(): Promise<{ exists: boolean; error: string | null; isSchemaValid?: boolean }> {
+    if (!this.supabase) {
+      return { exists: false, error: 'Supabase client not initialized', isSchemaValid: false };
+    }
+    try {
+      // 1. Verify table exists by requesting 1 ID
+      const { error: existError } = await this.supabase
+        .from('memory_entries')
+        .select('id')
+        .limit(1);
+
+      if (existError) {
+        console.error('Supabase table status check returned error:', existError.message, 'Code:', existError.code, 'Details:', existError.details);
+        if (existError.code === '42P01') {
+          this.isTableVerified = false;
+          return { exists: false, error: 'table_missing', isSchemaValid: false };
+        }
+        return { exists: false, error: existError.message, isSchemaValid: false };
+      }
+
+      // 2. Verify schema (user_id type) by selecting with a valid UUID format
+      const { error: schemaError } = await this.supabase
+        .from('memory_entries')
+        .select('id')
+        .eq('user_id', '00000000-0000-0000-0000-000000000001')
+        .limit(1);
+
+      if (schemaError) {
+        console.error('Supabase schema verification returned error:', schemaError.message, 'Code:', schemaError.code, 'Details:', schemaError.details);
+        if (schemaError.code === '22P02') {
+          // This means user_id is of type uuid instead of text!
+          this.isTableVerified = false; // Force fallback to local to avoid crashes
+          return { exists: true, error: 'schema_invalid_user_id_uuid', isSchemaValid: false };
+        }
+        this.isTableVerified = false;
+        return { exists: true, error: schemaError.message, isSchemaValid: false };
+      }
+
+      this.isTableVerified = true;
+      return { exists: true, error: null, isSchemaValid: true };
+    } catch (err: any) {
+      console.error('Supabase table status check threw exception:', err.message || err);
+      return { exists: false, error: err.message || 'Unknown error', isSchemaValid: false };
+    }
+  }
+
   // Insert a new memory entry
   async insertEntry(entry: MemoryEntry): Promise<void> {
-    if (this.mode === 'supabase' && this.supabase) {
+    const tableExists = await this.ensureTableExists();
+    if (this.mode === 'supabase' && this.supabase && tableExists) {
       const { error } = await this.supabase
         .from('memory_entries')
         .insert({
@@ -98,7 +181,8 @@ export class MemoryGatewayDb {
 
   // Query memory entries based on filters
   async queryEntries(filters: SearchFilters): Promise<MemoryEntry[]> {
-    if (this.mode === 'supabase' && this.supabase) {
+    const tableExists = await this.ensureTableExists();
+    if (this.mode === 'supabase' && this.supabase && tableExists) {
       try {
         let query = this.supabase
           .from('memory_entries')
@@ -147,8 +231,10 @@ export class MemoryGatewayDb {
         }
 
         return results;
-      } catch (err) {
-        console.error('Supabase query failed, falling back to local search', err);
+      } catch (err: any) {
+        console.error('Supabase query failed, falling back to local search. Message:', err?.message || err);
+        if (err?.code) console.error('Error code:', err.code);
+        if (err?.details) console.error('Error details:', err.details);
         return this.queryEntriesLocally(filters);
       }
     } else {
@@ -208,7 +294,8 @@ export class MemoryGatewayDb {
 
   // Get all unique tags for a user to display in filter chips
   async getAllTags(user_id: string): Promise<string[]> {
-    if (this.mode === 'supabase' && this.supabase) {
+    const tableExists = await this.ensureTableExists();
+    if (this.mode === 'supabase' && this.supabase && tableExists) {
       try {
         const { data, error } = await this.supabase
           .from('memory_entries')
@@ -224,8 +311,10 @@ export class MemoryGatewayDb {
           }
         });
         return Array.from(allTags);
-      } catch (err) {
-        console.error('Supabase tag fetch failed, fetching from local', err);
+      } catch (err: any) {
+        console.error('Supabase tag fetch failed, fetching from local. Message:', err?.message || err);
+        if (err?.code) console.error('Error code:', err.code);
+        if (err?.details) console.error('Error details:', err.details);
         return this.getAllTagsLocally(user_id);
       }
     } else {
