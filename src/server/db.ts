@@ -1,19 +1,31 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { MemoryEntry, SearchFilters } from '../types.js';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+const isSupabaseConfigured = !!(supabaseUrl && supabaseKey);
+
+// Use /tmp for safe write access, or fallback to OS tmpdir if on Windows
+const tmpBase = process.platform === 'win32' ? os.tmpdir() : '/tmp';
+const DATA_DIR = path.join(tmpBase, 'memory_app_data');
 const LOCAL_DB_PATH = path.join(DATA_DIR, 'memory_entries.json');
 
-// Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
-// Ensure database file exists
-if (!fs.existsSync(LOCAL_DB_PATH)) {
-  fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify([], null, 2), 'utf-8');
+// Ensure data directory exists ONLY if Supabase is not configured
+if (!isSupabaseConfigured) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    // Ensure database file exists
+    if (!fs.existsSync(LOCAL_DB_PATH)) {
+      fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify([], null, 2), 'utf-8');
+    }
+  } catch (err) {
+    console.error('Failed to initialize local filesystem database in /tmp:', err);
+  }
 }
 
 // Read database from file
