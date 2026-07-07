@@ -121,7 +121,7 @@ export class MemoryGatewayDb {
     if (this.mode !== 'supabase' || !this.supabase) {
       return false;
     }
-    if (this.isPublicTableVerified === true) {
+    if (this.isPublicTableVerified === true && !this.publicOccurredAtMissing) {
       return true;
     }
     const status = await this.checkPublicTableStatus();
