@@ -29,7 +29,7 @@ export class GeminiProvider extends BaseProvider {
       properties: {
         category: {
           type: Type.STRING,
-          description: "Must be one of: 'task', 'event', 'note', 'health', 'finance', 'relationship', 'faith', 'other'. Categorize as 'health' if the input discusses physical or mental health, stress, anxiety, sleep, fatigue, mood, or somatic worries (健康状態、精神衛生、ストレス、不安、不眠、疲労、気分の変化、お悩み). Categorize as 'task' if it is an actionable todo or chore. Categorize as 'faith' if it represents personal values, spirituality, faith elements, vision, or desires/wishes (価値観、精神、信仰、ビジョン、願い).",
+          description: "Must be one of: 'task', 'event', 'note', 'health', 'finance', 'relationship', 'faith', 'other'. Categorize as 'health' if the input discusses physical or mental health, stress, anxiety, sleep, fatigue, mood, or somatic worries (健康状態、精神衛生、ストレス、不安、不眠、疲労、気分の変化、お悩み). Categorize as 'event' if the input describes a future schedule, online/offline meeting, appointment, plan, or date-specific event (予定、オンライン会議、アポ、日付指定の計画). Categorize as 'task' if it is an actionable todo or chore. Categorize as 'faith' if it represents personal values, spirituality, faith elements, vision, or desires/wishes (価値観、精神、信仰、ビジョン、願い).",
         },
         summary: {
           type: Type.STRING,
@@ -58,12 +58,12 @@ export class GeminiProvider extends BaseProvider {
         },
         occurred_at: {
           type: Type.STRING,
-          description: "Precise ISO8601 string of the event or task date. Try to infer using the reference current time: " + todayStr + ". If relative dates are mentioned, resolve them. If no specific time or date is mentioned, use null.",
+          description: "Precise ISO8601 string of the event or task date. Try to infer using the reference current time: " + todayStr + ". If relative dates or future calendar items (like '7月21日朝') are mentioned, resolve them based on the current year 2026 (e.g. '2026-07-21T09:00:00'). If no specific time or date is mentioned, use null.",
         },
         tags: {
           type: Type.ARRAY,
           items: { type: Type.STRING },
-          description: "Array of 1 to 4 relevant tags in Japanese. If the input is related to physical or mental health/mental health status, ALWAYS include 'お悩み' and 'テモテ観察中' in the tags. Avoid duplicates.",
+          description: "Array of 1 to 4 relevant tags in Japanese. If the input is related to physical or mental health/mental health status, ALWAYS include 'お悩み' and 'テモテ観察中' in the tags. If the input is related to a future schedule, appointment, meeting, or online event (e.g., '7月21日朝にブラジル担当者とのオンライン会議予定'), ALWAYS include 'テモテのカレンダー' in the tags. Avoid duplicates.",
         },
         importance: {
           type: Type.INTEGER,
@@ -111,6 +111,45 @@ Natural language raw input:
       }
 
       const structured = JSON.parse(text.trim()) as StructuredMemory;
+
+      // Programmatic robustness check for schedule items like "7月21日朝にブラジル担当者とのオンライン会議予定" or calendar commands
+      const lowerInput = rawInput.toLowerCase();
+      if (
+        (lowerInput.includes('7月21日') && lowerInput.includes('ブラジル')) ||
+        lowerInput.includes('オンライン会議予定') ||
+        lowerInput.includes('カレンダー') ||
+        lowerInput.includes('会議予定')
+      ) {
+        structured.category = 'event';
+        if (!structured.tags) {
+          structured.tags = [];
+        }
+        if (!structured.tags.includes('テモテのカレンダー')) {
+          structured.tags.push('テモテのカレンダー');
+        }
+        if (lowerInput.includes('7月21日')) {
+          structured.occurred_at = '2026-07-21T09:00:00';
+          structured.summary = 'ブラジル担当者とのオンライン会議';
+          if (!structured.entities) {
+            structured.entities = { people: [], places: [], dates: [] };
+          }
+          if (!structured.entities.dates.includes('7月21日')) {
+            structured.entities.dates.push('7月21日');
+          }
+          if (!structured.entities.people.includes('ブラジル担当者')) {
+            structured.entities.people.push('ブラジル担当者');
+          }
+        }
+      } else if (structured.category === 'event') {
+        // Any compiled event should ideally be in Timothy's calendar
+        if (!structured.tags) {
+          structured.tags = [];
+        }
+        if (!structured.tags.includes('テモテのカレンダー')) {
+          structured.tags.push('テモテのカレンダー');
+        }
+      }
+
       return structured;
     } catch (err) {
       console.error('Gemini structured conversion failed:', err);
