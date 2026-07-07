@@ -26,7 +26,8 @@ import {
   RefreshCw,
   AlertTriangle,
   Lightbulb,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -257,6 +258,32 @@ export default function App() {
       showToast('info', 'リマインドを一時的に非表示にしました。');
     }
     setDismissedAlerts((prev) => [...prev, taskId]);
+  };
+
+  const handleDeleteEntry = async (id: string) => {
+    if (!window.confirm('この記憶ログを削除してもよろしいですか？（元に戻すことはできません）')) {
+      return;
+    }
+    try {
+      const res = await fetch('/api/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          user_id: currentUser.id,
+        }),
+      });
+      if (res.ok) {
+        showToast('success', '記憶ログを削除しました。');
+        handleSearch();
+        fetchTags();
+      } else {
+        showToast('error', '記憶ログの削除に失敗しました。');
+      }
+    } catch (err) {
+      console.error('Failed to delete entry:', err);
+      showToast('error', '削除処理中にエラーが発生しました。');
+    }
   };
 
   // Handle Speech Recognition setup (safeguarded)
@@ -1468,8 +1495,8 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
 
                           </div>
 
-                          {/* Right: Date occur */}
-                          <div className="text-right text-[11px] text-slate-400 font-mono whitespace-nowrap">
+                          {/* Right: Date occur & Action */}
+                          <div className="flex flex-col items-end gap-2 text-right text-[11px] text-slate-400 font-mono whitespace-nowrap">
                             <span>
                               {entry.occurred_at
                                 ? new Date(entry.occurred_at).toLocaleDateString('ja-JP', {
@@ -1483,6 +1510,14 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
                                     day: 'numeric'
                                   })}
                             </span>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteEntry(entry.id)}
+                              className="p-1.5 bg-slate-50 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-400 hover:text-rose-600 rounded-lg transition-all active:scale-95 flex items-center justify-center cursor-pointer"
+                              title="記憶を削除"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
                           </div>
 
                         </div>
