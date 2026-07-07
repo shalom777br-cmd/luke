@@ -21,6 +21,38 @@ export class GeminiProvider extends BaseProvider {
     });
   }
 
+  // Robust exponential backoff retry mechanism for transient API errors (like 503, 429, UNAVAILABLE)
+  private async callWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 1000): Promise<T> {
+    let attempt = 0;
+    while (attempt < retries) {
+      try {
+        return await fn();
+      } catch (err: any) {
+        attempt++;
+        const errorMessage = String(err?.message || err || '');
+        const isTransient = 
+          errorMessage.includes('503') ||
+          errorMessage.includes('429') ||
+          errorMessage.includes('UNAVAILABLE') ||
+          errorMessage.includes('ResourceExhausted') ||
+          errorMessage.includes('Resource exhausted') ||
+          errorMessage.includes('high demand') ||
+          errorMessage.includes('temporary') ||
+          errorMessage.includes('fetch failed') ||
+          errorMessage.includes('service is currently unavailable');
+
+        if (isTransient && attempt < retries) {
+          console.warn(`[Gemini Retry] Transient API error caught ("${errorMessage}"). Retrying attempt ${attempt}/${retries} in ${delayMs}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          delayMs *= 2; // exponential backoff
+        } else {
+          throw err;
+        }
+      }
+    }
+    throw new Error('AI Provider retries exhausted');
+  }
+
   async convertToStructured(rawInput: string, refDate?: string): Promise<StructuredMemory> {
     const todayStr = refDate || new Date().toISOString();
 
@@ -86,9 +118,10 @@ export class GeminiProvider extends BaseProvider {
     };
 
     try {
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-3.5-flash',
-        contents: `Please convert the following natural language memory or voice log into our AI common language JSON structure.
+      const response = await this.callWithRetry(() =>
+        this.ai.models.generateContent({
+          model: 'gemini-3.5-flash',
+          contents: `Please convert the following natural language memory or voice log into our AI common language JSON structure.
 Reference datetime to resolve relative date indicators: ${todayStr}
 
 CRITICAL REQUIREMENT: If the input is related to physical health, mental health, stress, fatigue, mood, anxiety, or somatic worries, make sure to:
@@ -98,12 +131,13 @@ CRITICAL REQUIREMENT: If the input is related to physical health, mental health,
 
 Natural language raw input:
 "${rawInput}"`,
-        config: {
-          systemInstruction: 'You are Ruka\'s Memory Gateway Engine. You specialize in compiling unstructured voice and text logs into highly precise, structured schemas. Strictly output JSON conforming to the schema. Ensure Category is exactly one of the eight specified categories. Emphasize physical and mental health inputs as highest importance (5) with "お悩み" and "テモテ観察中" tags.',
-          responseMimeType: 'application/json',
-          responseSchema: responseSchema,
-        },
-      });
+          config: {
+            systemInstruction: 'You are Ruka\'s Memory Gateway Engine. You specialize in compiling unstructured voice and text logs into highly precise, structured schemas. Strictly output JSON conforming to the schema. Ensure Category is exactly one of the eight specified categories. Emphasize physical and mental health inputs as highest importance (5) with "お悩み" and "テモテ観察中" tags.',
+            responseMimeType: 'application/json',
+            responseSchema: responseSchema,
+          },
+        })
+      );
 
       const text = response.text;
       if (!text) {
@@ -185,13 +219,15 @@ ${contextText || '該当する記録が見つかりませんでした。'}
 `;
 
     try {
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-3.5-flash',
-        contents: prompt,
-        config: {
-          systemInstruction: 'You are Ruka (ルカ), an AI Companion and Shared Memory Compiler. Synthesize the provided historical logs to answer the user\'s natural language query truthfully and concisely in Japanese. Use Markdown for layout if appropriate. Crucially, if the historical logs contain health-related items or physical/mental worries (especially those flagged with "お悩み" or "テモテ観察中"), include a warm, empathetic commentary or message from "Secretary Timothy (秘書テモテ)" at the end or embedded nicely, showing that Timothy is closely observing, caring for, and ready to support the user\'s wellbeing and task adjustments.',
-        },
-      });
+      const response = await this.callWithRetry(() =>
+        this.ai.models.generateContent({
+          model: 'gemini-3.5-flash',
+          contents: prompt,
+          config: {
+            systemInstruction: 'You are Ruka (ルカ), an AI Companion and Shared Memory Compiler. Synthesize the provided historical logs to answer the user\'s natural language query truthfully and concisely in Japanese. Use Markdown for layout if appropriate. Crucially, if the historical logs contain health-related items or physical/mental worries (especially those flagged with "お悩み" or "テモテ観察中"), include a warm, empathetic commentary or message from "Secretary Timothy (秘書テモテ)" at the end or embedded nicely, showing that Timothy is closely observing, caring for, and ready to support the user\'s wellbeing and task adjustments.',
+          },
+        })
+      );
 
       return response.text || '回答を作成できませんでした。';
     } catch (err) {

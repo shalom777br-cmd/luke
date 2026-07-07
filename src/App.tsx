@@ -32,7 +32,10 @@ import {
   Download,
   Copy,
   Share2,
-  Star
+  Star,
+  Github,
+  AlertCircle,
+  Pencil
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -43,6 +46,7 @@ import {
 } from './types';
 import { MemoryTrendChart } from './components/MemoryTrendChart';
 import { TimothyCalendar } from './components/TimothyCalendar';
+import { GitHubRepoTasks } from './components/GitHubRepoTasks';
 
 // Supported profiles to showcase the "shared" context capability
 const USER_PROFILES = [
@@ -140,6 +144,7 @@ export default function App() {
   
   // Retrieved entries and AI synthesis answer
   const [matchedEntries, setMatchedEntries] = useState<MemoryEntry[]>([]);
+  const [allCalendarEntries, setAllCalendarEntries] = useState<MemoryEntry[]>([]);
   const [aiAnswer, setAiAnswer] = useState<string | undefined>(undefined);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
 
@@ -153,6 +158,9 @@ export default function App() {
   const [expandedEntries, setExpandedEntries] = useState<Record<string, boolean>>({});
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
+  // Re-compiling state for entries that failed originally (e.g. 503 fallback)
+  const [recompilingIds, setRecompilingIds] = useState<string[]>([]);
+
   // JSON Viewer and Export States
   const [showDbJsonModal, setShowDbJsonModal] = useState(false);
   const [selectedEntryJson, setSelectedEntryJson] = useState<MemoryEntry | null>(null);
@@ -160,6 +168,16 @@ export default function App() {
   // Sharing States
   const [sharedModalEntry, setSharedModalEntry] = useState<MemoryEntry | null>(null);
   const [isSharedModalLoading, setIsSharedModalLoading] = useState(false);
+
+  // Manual edit state
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editSummary, setEditSummary] = useState('');
+  const [editCategory, setEditCategory] = useState<MemoryCategory>('note');
+  const [editImportance, setEditImportance] = useState<number>(3);
+  const [editOccurredAt, setEditOccurredAt] = useState('');
+  const [editTags, setEditTags] = useState('');
+  const [editRawInput, setEditRawInput] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Handle Close Shared Modal and clean query parameter
   const handleCloseSharedModal = () => {
@@ -238,6 +256,7 @@ export default function App() {
   useEffect(() => {
     handleSearch();
     fetchTags();
+    fetchCalendarEntries();
   }, [currentUser, selectedCategory, selectedTags, dateFrom, dateTo]);
 
   // Persist Timothy and alert states
@@ -319,6 +338,20 @@ export default function App() {
     showToast('info', 'タスク提案を却下しました。');
   };
 
+  const handleAcceptDevTask = (taskName: string, explanation: string) => {
+    const newTask = {
+      id: 'dev-' + (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2, 9)),
+      summary: taskName,
+      explanation: explanation,
+      due_date: new Date().toISOString(),
+      status: 'running',
+      countdown: 15,
+      created_at: new Date().toISOString()
+    };
+    setTimothyQueue((prev) => [newTask, ...prev]);
+    showToast('success', `テモテに開発指示を送りました：『${taskName}』の自動分析＆支援を開始します。`);
+  };
+
   const handleDismissPastTask = async (taskId: string, deleteFromDb: boolean) => {
     if (deleteFromDb) {
       try {
@@ -334,6 +367,7 @@ export default function App() {
           showToast('success', '期限切れのタスクをデータベースから消去しました。');
           handleSearch();
           fetchTags();
+          fetchCalendarEntries();
         } else {
           showToast('error', 'タスクの消去に失敗しました。');
         }
@@ -364,12 +398,98 @@ export default function App() {
         showToast('success', '記憶ログを削除しました。');
         handleSearch();
         fetchTags();
+        fetchCalendarEntries();
       } else {
         showToast('error', '記憶ログの削除に失敗しました。');
       }
     } catch (err) {
       console.error('Failed to delete entry:', err);
       showToast('error', '削除処理中にエラーが発生しました。');
+    }
+  };
+
+  const handleRecompileEntry = async (id: string) => {
+    setRecompilingIds((prev) => [...prev, id]);
+    try {
+      const res = await fetch('/api/recompile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          user_id: currentUser.id,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast('success', 'AIによる記憶の再コンパイルが完了しました！カレンダー自動登録や詳細タグが反映されました。');
+        handleSearch();
+        fetchTags();
+        fetchCalendarEntries();
+      } else {
+        showToast('error', data.error || 'AI再コンパイルに失敗しました。時間をおいて再試行してください。');
+      }
+    } catch (err) {
+      console.error('Failed to recompile entry:', err);
+      showToast('error', '再コンパイル中に通信エラーが発生しました。');
+    } finally {
+      setRecompilingIds((prev) => prev.filter((item) => item !== id));
+    }
+  };
+
+  const startEditing = (entry: MemoryEntry) => {
+    setEditingEntryId(entry.id);
+    setEditSummary(entry.summary);
+    setEditCategory(entry.category);
+    setEditImportance(entry.importance);
+    setEditOccurredAt(entry.occurred_at ? entry.occurred_at.slice(0, 16) : '');
+    setEditTags(entry.tags ? entry.tags.join(', ') : '');
+    setEditRawInput(entry.raw_input || '');
+  };
+
+  const cancelEditing = () => {
+    setEditingEntryId(null);
+  };
+
+  const saveEditing = async (id: string) => {
+    setIsSavingEdit(true);
+    try {
+      const parsedTags = editTags
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
+
+      const formattedDate = editOccurredAt ? new Date(editOccurredAt).toISOString() : null;
+
+      const res = await fetch('/api/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          user_id: currentUser.id,
+          summary: editSummary,
+          category: editCategory,
+          importance: Number(editImportance),
+          occurred_at: formattedDate,
+          tags: parsedTags,
+          raw_input: editRawInput,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast('success', '記憶ログを正常に更新しました。');
+        setEditingEntryId(null);
+        handleSearch();
+        fetchTags();
+        fetchCalendarEntries();
+      } else {
+        showToast('error', data.error || '記憶ログの更新に失敗しました。');
+      }
+    } catch (err) {
+      console.error('Failed to update entry:', err);
+      showToast('error', '更新処理中に通信エラーが発生しました。');
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -510,6 +630,7 @@ export default function App() {
         // Refresh entries and tags
         handleSearch();
         fetchTags();
+        fetchCalendarEntries();
       } else {
         throw new Error(data.error || 'Unknown ingestion error');
       }
@@ -554,6 +675,25 @@ export default function App() {
       showToast('error', '記憶の検索に失敗しました。');
     } finally {
       setIsSearching(false);
+    }
+  };
+
+  // Fetch all calendar entries for Timothy Calendar (unfiltered)
+  const fetchCalendarEntries = async () => {
+    try {
+      const res = await fetch('/api/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: currentUser.id,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAllCalendarEntries(data.entries || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch calendar entries:', err);
     }
   };
 
@@ -1328,11 +1468,11 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
               </div>
 
               {/* Monthly Interactive Calendar */}
-              <TimothyCalendar entries={matchedEntries} />
+              <TimothyCalendar entries={allCalendarEntries} />
 
               {(() => {
                 // Find calendar entries (category is event or tags include "テモテのカレンダー")
-                const calendarEvents = matchedEntries.filter(
+                const calendarEvents = allCalendarEntries.filter(
                   (entry) =>
                     entry.category === 'event' ||
                     entry.tags.includes('テモテのカレンダー')
@@ -1494,6 +1634,15 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
                   <p className="text-[10px] text-slate-400 mt-0.5">ルカに「資料を要約して」「タスク計画を作って」等と指示を送ると提案されます。</p>
                 </div>
               )}
+            </div>
+
+            {/* GitHub Repository State & Timothy Dev Tasks */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                <Github className="h-4.5 w-4.5 text-slate-800" />
+                <h3 className="text-sm font-bold text-slate-900">テモテの開発ダッシュボード (GitHub Repo Tasks)</h3>
+              </div>
+              <GitHubRepoTasks onAcceptDevTask={handleAcceptDevTask} />
             </div>
 
           </section>
@@ -1769,6 +1918,154 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
                       entry.structured.entities.places.length > 0 ||
                       entry.structured.entities.dates.length > 0;
 
+                    if (editingEntryId === entry.id) {
+                      return (
+                        <motion.div
+                          key={entry.id}
+                          layout="position"
+                          className="bg-slate-50 border border-indigo-200 rounded-xl p-5 shadow-sm space-y-4 relative"
+                        >
+                          <div className="absolute top-3 right-3 text-[10px] font-mono font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded">
+                            編集モード
+                          </div>
+
+                          <div className="space-y-3.5">
+                            {/* Title / Summary */}
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                タイトル / 概要
+                              </label>
+                              <input
+                                type="text"
+                                value={editSummary}
+                                onChange={(e) => setEditSummary(e.target.value)}
+                                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-indigo-500 text-slate-800"
+                                placeholder="概要を入力してください"
+                              />
+                            </div>
+
+                            {/* Raw text / Original Log */}
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                原文ログ / トランスクリプト
+                              </label>
+                              <textarea
+                                value={editRawInput}
+                                onChange={(e) => setEditRawInput(e.target.value)}
+                                rows={2}
+                                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium focus:outline-none focus:border-indigo-500 text-slate-800 font-mono"
+                                placeholder="原文の出来事やメモ..."
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              {/* Category selector */}
+                              <div>
+                                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                  カテゴリ
+                                </label>
+                                <select
+                                  value={editCategory}
+                                  onChange={(e) => setEditCategory(e.target.value as MemoryCategory)}
+                                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-indigo-500 text-slate-800 cursor-pointer"
+                                >
+                                  {Object.entries(CATEGORY_DETAILS).map(([key, details]) => (
+                                    <option key={key} value={key}>
+                                      {details.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* Importance selector */}
+                              <div>
+                                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                  重要度
+                                </label>
+                                <div className="flex items-center gap-1.5 h-[34px]">
+                                  {[1, 2, 3, 4, 5].map((star) => (
+                                    <button
+                                      key={star}
+                                      type="button"
+                                      onClick={() => setEditImportance(star)}
+                                      className="p-1 text-slate-300 hover:text-amber-400 transition-colors cursor-pointer"
+                                    >
+                                      <Star
+                                        className={`h-4.5 w-4.5 ${
+                                          star <= editImportance ? 'fill-amber-400 text-amber-500' : 'text-slate-300'
+                                        }`}
+                                      />
+                                    </button>
+                                  ))}
+                                  <span className="text-[10px] text-slate-400 font-mono ml-1 font-bold">
+                                    {editImportance}/5
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              {/* Occurred At date picker */}
+                              <div>
+                                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                  発生日時 (Occurred At)
+                                </label>
+                                <input
+                                  type="datetime-local"
+                                  value={editOccurredAt}
+                                  onChange={(e) => setEditOccurredAt(e.target.value)}
+                                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium focus:outline-none focus:border-indigo-500 text-slate-800 font-mono"
+                                />
+                              </div>
+
+                              {/* Tags list */}
+                              <div>
+                                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                  タグ (カンマ区切り)
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editTags}
+                                  onChange={(e) => setEditTags(e.target.value)}
+                                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-indigo-500 text-slate-800"
+                                  placeholder="健康, お悩み, 予定"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Edit Actions buttons */}
+                          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                            <button
+                              type="button"
+                              onClick={cancelEditing}
+                              className="px-3.5 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg text-xs font-bold text-slate-600 transition-all cursor-pointer"
+                            >
+                              キャンセル
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isSavingEdit}
+                              onClick={() => saveEditing(entry.id)}
+                              className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                            >
+                              {isSavingEdit ? (
+                                <>
+                                  <RefreshCw className="h-3 w-3 animate-spin" />
+                                  <span>保存中...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Check className="h-3.5 w-3.5" />
+                                  <span>変更を保存</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </motion.div>
+                      );
+                    }
+
                     return (
                       <motion.div
                         key={entry.id}
@@ -1780,6 +2077,42 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
                         {/* Action Required background stripe decoration */}
                         {entry.structured.action_required && (
                           <div className="absolute top-0 right-0 w-1.5 h-full bg-amber-500" />
+                        )}
+
+                        {/* Fallback Unprocessed AI Notice */}
+                        {entry.tags && entry.tags.includes('AI未処理') && (
+                          <div className="mb-3.5 bg-rose-50/75 border border-rose-200/60 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 h-16 w-16 bg-rose-500/5 rounded-full blur-xl pointer-events-none" />
+                            <div className="flex items-start gap-2">
+                              <AlertCircle className="h-4.5 w-4.5 text-rose-500 mt-0.5 flex-shrink-0" />
+                              <div className="space-y-0.5">
+                                <span className="text-xs font-bold text-rose-800 block">AI簡易処理 (混雑によるフォールバック)</span>
+                                <span className="text-[10.5px] text-rose-600 block leading-normal">
+                                  AIサーバー混雑のため、この記録は簡易保存されました。再コンパイルを呼び出し、自動カレンダー・アクション・詳細カテゴリ分析を実行できます。
+                                </span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={recompilingIds.includes(entry.id)}
+                              onClick={() => handleRecompileEntry(entry.id)}
+                              className={`flex-shrink-0 inline-flex items-center gap-1 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 text-white text-[11px] font-bold rounded-lg transition-colors cursor-pointer shadow-3xs ${
+                                recompilingIds.includes(entry.id) ? 'animate-pulse' : ''
+                              }`}
+                            >
+                              {recompilingIds.includes(entry.id) ? (
+                                <>
+                                  <RefreshCw className="h-3 w-3 animate-spin" />
+                                  <span>再解析中...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <RefreshCw className="h-3 w-3" />
+                                  <span>AI再コンパイル</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
                         )}
 
                         <div className="flex items-start justify-between gap-3">
@@ -1833,6 +2166,14 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
                                   })}
                             </span>
                             <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => startEditing(entry)}
+                                className="p-1.5 bg-slate-50 hover:bg-amber-50 border border-slate-200 hover:border-amber-200 text-slate-400 hover:text-amber-600 rounded-lg transition-all active:scale-95 flex items-center justify-center cursor-pointer"
+                                title="記憶を編集"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => handleShareEntry(entry)}

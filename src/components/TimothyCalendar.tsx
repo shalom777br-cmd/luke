@@ -60,7 +60,8 @@ export const TimothyCalendar: React.FC<TimothyCalendarProps> = ({ entries }) => 
     entries.forEach((entry) => {
       // We only map events or items marked with 'テモテのカレンダー'
       if (entry.category === 'event' || entry.tags.includes('テモテのカレンダー')) {
-        const dateStr = entry.occurred_at ? entry.occurred_at.split('T')[0] : entry.created_at.split('T')[0];
+        const rawDate = entry.occurred_at ? entry.occurred_at : entry.created_at;
+        const dateStr = rawDate.slice(0, 10).replace(/\//g, '-');
         if (!map[dateStr]) {
           map[dateStr] = [];
         }

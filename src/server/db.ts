@@ -227,6 +227,40 @@ export class MemoryGatewayDb {
     }
   }
 
+  // Update an existing memory entry (such as re-compiling with AI)
+  async updateEntry(id: string, user_id: string, updatedFields: Partial<MemoryEntry>): Promise<boolean> {
+    // 1. Update locally
+    const dbLocal = readLocalDb();
+    const idx = dbLocal.findIndex((entry) => entry.id === id && entry.user_id === user_id);
+    let updatedLocally = false;
+    if (idx !== -1) {
+      dbLocal[idx] = { ...dbLocal[idx], ...updatedFields };
+      writeLocalDb(dbLocal);
+      updatedLocally = true;
+    }
+
+    // 2. Update Supabase if exists
+    let updatedSupabase = false;
+    const tableExists = await this.ensureTableExists();
+    if (this.mode === 'supabase' && this.supabase && tableExists) {
+      try {
+        const { error } = await this.supabase
+          .from('memory_entries')
+          .update(updatedFields)
+          .eq('id', id)
+          .eq('user_id', user_id);
+        if (!error) {
+          updatedSupabase = true;
+        } else {
+          console.error('Supabase update failed:', error);
+        }
+      } catch (err: any) {
+        console.error('Supabase update exception:', err?.message || err);
+      }
+    }
+    return updatedLocally || updatedSupabase;
+  }
+
   // Get a single memory entry by ID (for sharing)
   async getEntryById(id: string): Promise<MemoryEntry | null> {
     // 1. Try to find locally first
