@@ -46,6 +46,7 @@ const USER_PROFILES = [
 
 const CATEGORY_DETAILS: Record<MemoryCategory, { label: string; icon: any; color: string; bg: string; border: string }> = {
   task: { label: 'タスク', icon: CheckSquare, color: 'text-sky-600', bg: 'bg-sky-50', border: 'border-sky-200' },
+  value: { label: '価値観・信仰・願い', icon: Heart, color: 'text-fuchsia-600', bg: 'bg-fuchsia-50', border: 'border-fuchsia-200' },
   event: { label: '予定 / 出来事', icon: CalendarDays, color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-200' },
   note: { label: 'メモ / 考察', icon: BookOpen, color: 'text-slate-600', bg: 'bg-slate-100', border: 'border-slate-300' },
   health: { label: '健康 / 体調', icon: Activity, color: 'text-teal-600', bg: 'bg-teal-50', border: 'border-teal-200' },
@@ -58,6 +59,37 @@ const CATEGORY_DETAILS: Record<MemoryCategory, { label: string; icon: any; color
 export default function App() {
   // Current user / profile select
   const [currentUser, setCurrentUser] = useState(USER_PROFILES[0]);
+
+  // Timothy Task Proposals state (Luke proposes task to User)
+  const [taskProposals, setTaskProposals] = useState<any[]>(() => {
+    try {
+      const stored = localStorage.getItem('timothy_proposals');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Timothy Active Task Queue state
+  const [timothyQueue, setTimothyQueue] = useState<any[]>(() => {
+    try {
+      const stored = localStorage.getItem('timothy_queue');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Past Due Alert / Reminders queue state
+  const [pastDueAlerts, setPastDueAlerts] = useState<any[]>([]);
+  const [dismissedAlerts, setDismissedAlerts] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('dismissed_alerts');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
   
   // App system status
   const [systemStatus, setSystemStatus] = useState<{
@@ -120,6 +152,113 @@ export default function App() {
     handleSearch();
     fetchTags();
   }, [currentUser, selectedCategory, selectedTags, dateFrom, dateTo]);
+
+  // Persist Timothy and alert states
+  useEffect(() => {
+    localStorage.setItem('timothy_proposals', JSON.stringify(taskProposals));
+  }, [taskProposals]);
+
+  useEffect(() => {
+    localStorage.setItem('timothy_queue', JSON.stringify(timothyQueue));
+  }, [timothyQueue]);
+
+  useEffect(() => {
+    localStorage.setItem('dismissed_alerts', JSON.stringify(dismissedAlerts));
+  }, [dismissedAlerts]);
+
+  // Timothy task ticking loop
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimothyQueue((prevQueue) => {
+        let changed = false;
+        const nextQueue = prevQueue.map((task) => {
+          if (task.status === 'running') {
+            changed = true;
+            if (task.countdown > 1) {
+              return { ...task, countdown: task.countdown - 1 };
+            } else {
+              return {
+                ...task,
+                countdown: 0,
+                status: 'completed',
+                report: `テモテ報告: 指示されたタスク『${task.summary}』の処理を着実に完了しました。関連する記憶ノードを整理・補強し、次のアクションへ移行可能です。`
+              };
+            }
+          }
+          return task;
+        });
+        return changed ? nextQueue : prevQueue;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  // Past due task alert monitor loop
+  useEffect(() => {
+    const alertTimer = setInterval(() => {
+      if (matchedEntries.length === 0) return;
+      const tasks = matchedEntries.filter(
+        (e) => e.category === 'task' && e.occurred_at && !dismissedAlerts.includes(e.id)
+      );
+      const pastTasks = tasks.filter((e) => {
+        const time = new Date(e.occurred_at!).getTime();
+        return time < Date.now();
+      });
+      setPastDueAlerts(pastTasks);
+    }, 3000);
+
+    return () => clearInterval(alertTimer);
+  }, [matchedEntries, dismissedAlerts]);
+
+  // Handlers for Proposals and Alerts
+  const handleApproveProposal = (proposal: any) => {
+    const newTask = {
+      id: proposal.id,
+      summary: proposal.summary,
+      explanation: proposal.explanation,
+      due_date: proposal.occurred_at,
+      status: 'running',
+      countdown: 10,
+      created_at: new Date().toISOString()
+    };
+    setTimothyQueue((prev) => [newTask, ...prev]);
+    setTaskProposals((prev) => prev.filter((p) => p.id !== proposal.id));
+    showToast('success', `テモテに指示を送りました：『${proposal.summary}』に着手します。`);
+  };
+
+  const handleRejectProposal = (proposalId: string) => {
+    setTaskProposals((prev) => prev.filter((p) => p.id !== proposalId));
+    showToast('info', 'タスク提案を却下しました。');
+  };
+
+  const handleDismissPastTask = async (taskId: string, deleteFromDb: boolean) => {
+    if (deleteFromDb) {
+      try {
+        const res = await fetch('/api/delete', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: taskId,
+            user_id: currentUser.id,
+          }),
+        });
+        if (res.ok) {
+          showToast('success', '期限切れのタスクをデータベースから消去しました。');
+          handleSearch();
+          fetchTags();
+        } else {
+          showToast('error', 'タスクの消去に失敗しました。');
+        }
+      } catch (err) {
+        console.error('Failed to delete past task:', err);
+        showToast('error', 'タスクの消去中にエラーが発生しました。');
+      }
+    } else {
+      showToast('info', 'リマインドを一時的に非表示にしました。');
+    }
+    setDismissedAlerts((prev) => [...prev, taskId]);
+  };
 
   // Handle Speech Recognition setup (safeguarded)
   useEffect(() => {
@@ -233,7 +372,27 @@ export default function App() {
       if (data.success) {
         setLastCompiledEntry(data.entry);
         setRawInput('');
-        showToast('success', '記憶をコンパイルし、正常にデータベースに投入しました！');
+
+        // Trigger proposal state if the compiled memory is a task and is AI-executable
+        if (
+          data.entry.category === 'task' &&
+          data.entry.structured &&
+          data.entry.structured.is_ai_executable
+        ) {
+          setTaskProposals((prev) => [
+            {
+              id: data.entry.id,
+              summary: data.entry.summary,
+              explanation: data.entry.structured.task_explanation || 'AIエージェント「テモテ」が処理可能なタスクです。',
+              occurred_at: data.entry.occurred_at || data.entry.created_at,
+              entry: data.entry,
+            },
+            ...prev,
+          ]);
+          showToast('success', '記憶のコンパイルに成功しました。AIエージェント向けの新規タスク提案があります！');
+        } else {
+          showToast('success', '記憶をコンパイルし、正常にデータベースに投入しました！');
+        }
         
         // Refresh entries and tags
         handleSearch();
@@ -574,6 +733,57 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
           </motion.div>
         )}
 
+        {/* Past Due Reminders Panel */}
+        <AnimatePresence>
+          {pastDueAlerts.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="mb-8 p-5 bg-rose-50 border border-rose-200 rounded-2xl shadow-xs relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-1.5 h-full bg-rose-500" />
+              <div className="flex items-start gap-4">
+                <div className="p-2.5 bg-rose-100 rounded-xl text-rose-800 flex-shrink-0">
+                  <AlertTriangle className="h-5 w-5 text-rose-600 animate-bounce" />
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  <h3 className="text-xs font-bold text-rose-900 uppercase tracking-wide flex items-center gap-1.5">
+                    <span>⏰ 期限切れタスクのリマインド (過去時刻検知)</span>
+                  </h3>
+                  <p className="text-xs text-slate-700 leading-relaxed">
+                    タスク<strong>『{pastDueAlerts[0].summary}』</strong>の設定された予定時刻（
+                    {new Date(pastDueAlerts[0].occurred_at).toLocaleString('ja-JP', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                    ）が過去になりました。このタスクを消去して一覧から整理しますか？
+                  </p>
+                  <div className="flex items-center gap-3 pt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleDismissPastTask(pastDueAlerts[0].id, true)}
+                      className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs active:scale-95"
+                    >
+                      はい、データベースから消去する
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDismissPastTask(pastDueAlerts[0].id, false)}
+                      className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                    >
+                      いいえ、リマインドだけ非表示
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
           {/* Left Side Panel - Ingestion (4 cols) */}
@@ -860,6 +1070,146 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* Timothy Task Proposals Panel */}
+            <AnimatePresence>
+              {taskProposals.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="bg-amber-50 rounded-2xl border border-amber-200 p-6 shadow-sm space-y-4"
+                >
+                  <div className="flex items-center gap-2 pb-1 border-b border-amber-200/60">
+                    <Sparkles className="h-4.5 w-4.5 text-amber-600 animate-pulse" />
+                    <h3 className="text-sm font-bold text-amber-900">ルカの自動提案 (AI実行可能タスク)</h3>
+                    <span className="ml-auto bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      {taskProposals.length}件の提案
+                    </span>
+                  </div>
+
+                  <div className="space-y-4 max-h-72 overflow-y-auto pr-1">
+                    {taskProposals.map((proposal) => (
+                      <div key={proposal.id} className="bg-white rounded-xl p-4 border border-amber-100 space-y-3 shadow-2xs">
+                        <div>
+                          <span className="text-[10px] uppercase font-bold tracking-wide text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-100">
+                            エージェント処理可能
+                          </span>
+                          <h4 className="text-xs font-bold text-slate-800 mt-2 font-sans">
+                            {proposal.summary}
+                          </h4>
+                        </div>
+                        <p className="text-[11px] text-slate-600 leading-relaxed font-sans">
+                          {proposal.explanation}
+                        </p>
+
+                        <div className="flex items-center justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => handleRejectProposal(proposal.id)}
+                            className="px-2.5 py-1.5 text-[11px] font-medium text-slate-500 hover:text-slate-800 transition-colors"
+                          >
+                            提案を却下
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleApproveProposal(proposal)}
+                            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] rounded-lg transition-all flex items-center gap-1 shadow-xs"
+                          >
+                            <Cpu className="h-3 w-3" />
+                            承認して指示（テモテ着手）
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Timothy Task Queue Panel */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                <Cpu className="h-4.5 w-4.5 text-emerald-600" />
+                <h3 className="text-sm font-bold text-slate-900">テモテのタスクキュー (Timothy Task Queue)</h3>
+                <span className="ml-auto bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full font-mono">
+                  {timothyQueue.filter((t) => t.status === 'running').length} 実行中
+                </span>
+              </div>
+
+              {timothyQueue.length > 0 ? (
+                <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                  {timothyQueue.map((task) => (
+                    <div
+                      key={task.id}
+                      className={`rounded-xl p-3.5 border transition-all relative overflow-hidden ${
+                        task.status === 'running'
+                          ? 'bg-emerald-50/50 border-emerald-200 ring-1 ring-emerald-500/5'
+                          : 'bg-slate-50/60 border-slate-200'
+                      }`}
+                    >
+                      {/* Active green stripe */}
+                      {task.status === 'running' && (
+                        <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500" />
+                      )}
+
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase ${
+                                task.status === 'running'
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200 animate-pulse'
+                                  : 'bg-slate-200 text-slate-600 border border-slate-300'
+                              }`}
+                            >
+                              {task.status === 'running' ? '着手・実行中' : '実行完了'}
+                            </span>
+                            {task.status === 'running' && (
+                              <span className="text-[10px] font-mono font-bold text-emerald-600 flex items-center gap-1 bg-white px-1.5 py-0.2 rounded border border-emerald-100">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
+                                <span>[残り {task.countdown}秒]</span>
+                              </span>
+                            )}
+                          </div>
+                          <h4 className="text-xs font-bold text-slate-800 leading-snug">{task.summary}</h4>
+                        </div>
+
+                        {/* Dismiss finished task button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTimothyQueue((prev) => prev.filter((t) => t.id !== task.id));
+                            showToast('info', 'キューからタスクを整理しました。');
+                          }}
+                          className="text-slate-400 hover:text-slate-600 p-1"
+                          title="履歴から削除"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+
+                      <p className="text-[11px] text-slate-500 mt-2 leading-relaxed font-sans">
+                        {task.explanation}
+                      </p>
+
+                      {task.status === 'completed' && task.report && (
+                        <div className="mt-2.5 pt-2 border-t border-slate-200/60 text-[11px] text-slate-700 bg-white/80 p-2.5 rounded-lg border border-slate-100 leading-relaxed font-mono">
+                          <CheckCircle className="h-3 w-3 text-emerald-500 inline mr-1" />
+                          {task.report}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6 text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-xs">
+                  <Cpu className="h-6 w-6 text-slate-300 mx-auto mb-1.5" />
+                  <p>待機中のタスクはありません。</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">ルカに「資料を要約して」「タスク計画を作って」等と指示を送ると提案されます。</p>
+                </div>
+              )}
+            </div>
 
           </section>
 

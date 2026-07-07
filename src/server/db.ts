@@ -31,6 +31,9 @@ if (!isSupabaseConfigured) {
 // Read database from file
 function readLocalDb(): MemoryEntry[] {
   try {
+    if (!fs.existsSync(LOCAL_DB_PATH)) {
+      return [];
+    }
     const raw = fs.readFileSync(LOCAL_DB_PATH, 'utf-8');
     const entries = JSON.parse(raw) as MemoryEntry[];
     let migrated = false;
@@ -63,6 +66,10 @@ function readLocalDb(): MemoryEntry[] {
 // Write database to file
 function writeLocalDb(entries: MemoryEntry[]): void {
   try {
+    const dir = path.dirname(LOCAL_DB_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
     fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(entries, null, 2), 'utf-8');
   } catch (error) {
     console.error('Failed to write local DB', error);
@@ -156,7 +163,13 @@ export class MemoryGatewayDb {
   // Insert a new memory entry
   async insertEntry(entry: MemoryEntry): Promise<void> {
     const tableExists = await this.ensureTableExists();
-    if (this.mode === 'supabase' && this.supabase && tableExists) {
+    // Rule: Save to Supabase if category is 'value' OR (category is NOT 'task' AND importance >= 4)
+    const isBrainLibraryItem =
+      entry.category === 'value' ||
+      (entry.category !== 'task' && entry.importance >= 4);
+
+    if (this.mode === 'supabase' && this.supabase && tableExists && isBrainLibraryItem) {
+      console.log(`Saving Brain Library item [${entry.category}] with importance [${entry.importance}] to Supabase...`);
       const { error } = await this.supabase
         .from('memory_entries')
         .insert({
@@ -177,10 +190,10 @@ export class MemoryGatewayDb {
       if (error) {
         console.error('Supabase insert failed. Error details:', error);
         console.log('Falling back to local storage for this insert to prevent data loss...');
-        // Fallback to local
         this.insertEntryLocally(entry);
       }
     } else {
+      console.log(`Saving standard item [${entry.category}] with importance [${entry.importance}] to local database...`);
       this.insertEntryLocally(entry);
     }
   }
@@ -191,8 +204,32 @@ export class MemoryGatewayDb {
     writeLocalDb(db);
   }
 
+  // Delete a memory entry from both local database and Supabase (if configured)
+  async deleteEntry(id: string, user_id: string): Promise<void> {
+    // Delete locally
+    const db = readLocalDb();
+    const filtered = db.filter((entry) => entry.id !== id);
+    writeLocalDb(filtered);
+
+    // Delete from Supabase if configured
+    const tableExists = await this.ensureTableExists();
+    if (this.mode === 'supabase' && this.supabase && tableExists) {
+      try {
+        await this.supabase
+          .from('memory_entries')
+          .delete()
+          .eq('id', id)
+          .eq('user_id', user_id);
+        console.log(`Successfully deleted entry [${id}] from Supabase.`);
+      } catch (err: any) {
+        console.error('Supabase delete failed:', err?.message || err);
+      }
+    }
+  }
+
   // Query memory entries based on filters
   async queryEntries(filters: SearchFilters): Promise<MemoryEntry[]> {
+    const localResults = this.queryEntriesLocally(filters);
     const tableExists = await this.ensureTableExists();
     if (this.mode === 'supabase' && this.supabase && tableExists) {
       try {
@@ -211,13 +248,6 @@ export class MemoryGatewayDb {
 
         if (filters.date_to) {
           query = query.lte('occurred_at', filters.date_to);
-        }
-
-        if (filters.tags && filters.tags.length > 0) {
-          // In Postgres array containment is used for array filters.
-          // Using cs (contains) or matching tags via manual filtering.
-          // We can use a JSON array overlap or filter them on server/client.
-          // Let's filter on the server using overlap or query.containedBy, or simply filter after fetching.
         }
 
         const { data, error } = await query.order('occurred_at', { ascending: false });
@@ -242,15 +272,24 @@ export class MemoryGatewayDb {
           );
         }
 
-        return results;
+        // Merge local database and Supabase database results, deduplicating by ID
+        const mergedMap = new Map<string, MemoryEntry>();
+        localResults.forEach((entry) => mergedMap.set(entry.id, entry));
+        results.forEach((entry) => mergedMap.set(entry.id, entry));
+
+        const mergedList = Array.from(mergedMap.values());
+        // Sort merged results by occurred_at desc, then created_at desc
+        return mergedList.sort((a, b) => {
+          const aTime = a.occurred_at ? new Date(a.occurred_at).getTime() : new Date(a.created_at).getTime();
+          const bTime = b.occurred_at ? new Date(b.occurred_at).getTime() : new Date(b.created_at).getTime();
+          return bTime - aTime;
+        });
       } catch (err: any) {
-        console.error('Supabase query failed, falling back to local search. Message:', err?.message || err);
-        if (err?.code) console.error('Error code:', err.code);
-        if (err?.details) console.error('Error details:', err.details);
-        return this.queryEntriesLocally(filters);
+        console.error('Supabase query failed, returning local search results. Message:', err?.message || err);
+        return localResults;
       }
     } else {
-      return this.queryEntriesLocally(filters);
+      return localResults;
     }
   }
 
@@ -306,6 +345,7 @@ export class MemoryGatewayDb {
 
   // Get all unique tags for a user to display in filter chips
   async getAllTags(user_id: string): Promise<string[]> {
+    const localTags = this.getAllTagsLocally(user_id);
     const tableExists = await this.ensureTableExists();
     if (this.mode === 'supabase' && this.supabase && tableExists) {
       try {
@@ -316,7 +356,7 @@ export class MemoryGatewayDb {
 
         if (error) throw error;
 
-        const allTags = new Set<string>();
+        const allTags = new Set<string>(localTags);
         data?.forEach((row: { tags: string[] }) => {
           if (row.tags) {
             row.tags.forEach((tag) => allTags.add(tag));
@@ -324,13 +364,11 @@ export class MemoryGatewayDb {
         });
         return Array.from(allTags);
       } catch (err: any) {
-        console.error('Supabase tag fetch failed, fetching from local. Message:', err?.message || err);
-        if (err?.code) console.error('Error code:', err.code);
-        if (err?.details) console.error('Error details:', err.details);
-        return this.getAllTagsLocally(user_id);
+        console.error('Supabase tag fetch failed, returning combined list from local tags. Message:', err?.message || err);
+        return localTags;
       }
     } else {
-      return this.getAllTagsLocally(user_id);
+      return localTags;
     }
   }
 

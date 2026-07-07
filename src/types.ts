@@ -1,5 +1,6 @@
 export type MemoryCategory =
   | 'task'
+  | 'value'
   | 'event'
   | 'note'
   | 'health'
@@ -20,6 +21,8 @@ export interface StructuredMemory {
   tags: string[];
   importance: number; // 1 to 5
   action_required: boolean;
+  is_ai_executable?: boolean;
+  task_explanation?: string;
 }
 
 export interface MemoryEntry {

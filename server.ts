@@ -115,6 +115,24 @@ app.post('/api/ingest', async (req, res) => {
   }
 });
 
+// API Route: Delete memory entry
+app.delete('/api/delete', async (req, res) => {
+  const { id, user_id } = req.body;
+
+  if (!id || !user_id) {
+    res.status(400).json({ error: 'Missing required parameters: id or user_id' });
+    return;
+  }
+
+  try {
+    await db.deleteEntry(id, user_id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Delete operation failed:', err);
+    res.status(500).json({ error: 'Failed to delete memory entry' });
+  }
+});
+
 // API Route: Search memories and optionally answer in natural language
 app.post('/api/search', async (req, res) => {
   const { user_id, category, tags, date_from, date_to, query_text } = req.body;

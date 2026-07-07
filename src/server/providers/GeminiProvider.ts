@@ -29,7 +29,7 @@ export class GeminiProvider extends BaseProvider {
       properties: {
         category: {
           type: Type.STRING,
-          description: "Must be one of: 'task', 'event', 'note', 'health', 'finance', 'relationship', 'faith', 'other'",
+          description: "Must be one of: 'task', 'value', 'event', 'note', 'health', 'finance', 'relationship', 'faith', 'other'. Categorize as 'task' if it is an actionable todo or chore. Categorize as 'value' if it represents personal values, core beliefs, faith elements, vision, or desires/wishes (価値観・信仰・ビジョン・願い).",
         },
         summary: {
           type: Type.STRING,
@@ -73,8 +73,16 @@ export class GeminiProvider extends BaseProvider {
           type: Type.BOOLEAN,
           description: "True if the memory is an actionable task, todo, or requires future action. False otherwise.",
         },
+        is_ai_executable: {
+          type: Type.BOOLEAN,
+          description: "True if the task is a digital task that can be executed/completed by an AI agent (e.g., writing drafts, translating, analyzing, calculations, organizing information, researching, summarizing). False if it is a physical task that must be done in-person or physically by the user (e.g., going shopping, sleeping, eating, meeting friends physically).",
+        },
+        task_explanation: {
+          type: Type.STRING,
+          description: "A short explanation in Japanese explaining how Timothy the AI can execute this task, or why it requires the user's personal action.",
+        },
       },
-      required: ['category', 'summary', 'entities', 'occurred_at', 'tags', 'importance', 'action_required'],
+      required: ['category', 'summary', 'entities', 'occurred_at', 'tags', 'importance', 'action_required', 'is_ai_executable', 'task_explanation'],
     };
 
     try {
@@ -86,7 +94,7 @@ Reference datetime to resolve relative date indicators: ${todayStr}
 Natural language raw input:
 "${rawInput}"`,
         config: {
-          systemInstruction: 'You are Ruka\'s Memory Gateway Engine. You specialize in compiling unstructured voice and text logs into highly precise, structured schemas. Strictly output JSON conforming to the schema. Ensure Category is exactly one of the eight specified categories.',
+          systemInstruction: 'You are Ruka\'s Memory Gateway Engine. You specialize in compiling unstructured voice and text logs into highly precise, structured schemas. Strictly output JSON conforming to the schema. Ensure Category is exactly one of the nine specified categories (including task and value).',
           responseMimeType: 'application/json',
           responseSchema: responseSchema,
         },
