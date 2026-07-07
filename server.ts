@@ -247,6 +247,31 @@ app.post('/api/update', async (req, res) => {
   }
 });
 
+// API Route: AI Re-evaluate importance & category
+app.post('/api/re-evaluate', async (req, res) => {
+  const { content, current_category, current_importance } = req.body;
+
+  if (!content) {
+    res.status(400).json({ error: 'Missing required parameter: content' });
+    return;
+  }
+
+  try {
+    const evaluation = await provider.reEvaluate(
+      content,
+      current_category || 'other',
+      Number(current_importance) || 3
+    );
+    res.json({
+      success: true,
+      ...evaluation,
+    });
+  } catch (err: any) {
+    console.error('AI Re-evaluation failed:', err);
+    res.status(500).json({ error: err?.message || 'AI re-evaluation failed.' });
+  }
+});
+
 // API Route: Search memories and optionally answer in natural language
 app.post('/api/search', async (req, res) => {
   const { user_id, category, tags, date_from, date_to, query_text } = req.body;

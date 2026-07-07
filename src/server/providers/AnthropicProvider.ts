@@ -138,4 +138,77 @@ Body: ${entry.raw_input}
       return 'Claudeでの回答生成中にエラーが発生しました。';
     }
   }
+
+  async reEvaluate(
+    content: string,
+    currentCategory: string,
+    currentImportance: number
+  ): Promise<{ suggested_category: string; suggested_importance: number; reason: string }> {
+    if (!this.apiKey) {
+      return {
+        suggested_category: currentCategory,
+        suggested_importance: currentImportance,
+        reason: 'Claude APIキーが設定されていないため、現在の属性を維持することをお勧めします。',
+      };
+    }
+
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': this.apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-3-5-sonnet-20241022',
+          max_tokens: 1000,
+          system: `You are Ruka's Memory Auditor. Your output must be a single raw JSON object, without markdown codeblock formatting or introductory text.
+The JSON must strictly match this schema:
+{
+  "suggested_category": "task" | "event" | "note" | "health" | "finance" | "relationship" | "faith" | "other",
+  "suggested_importance": 1-5,
+  "reason": "Japanese explanation explaining why this category and importance are recommended (about 30-60 characters)"
+}`,
+          messages: [
+            {
+              role: 'user',
+              content: `Please re-evaluate this memory:
+Content: "${content}"
+Current Category: ${currentCategory}
+Current Importance: ${currentImportance}`,
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Anthropic API returned status ${response.status}`);
+      }
+
+      const data = await response.json() as any;
+      const text = data.content?.[0]?.text;
+      if (!text) {
+        throw new Error('Anthropic returned empty content');
+      }
+
+      const jsonStart = text.indexOf('{');
+      const jsonEnd = text.lastIndexOf('}') + 1;
+      const cleanJson = text.substring(jsonStart, jsonEnd);
+      const parsed = JSON.parse(cleanJson);
+
+      return {
+        suggested_category: parsed.suggested_category || currentCategory,
+        suggested_importance: typeof parsed.suggested_importance === 'number' ? parsed.suggested_importance : currentImportance,
+        reason: parsed.reason || '再評価結果に基づき、設定を推奨します。',
+      };
+    } catch (err) {
+      console.error('Anthropic re-evaluation failed:', err);
+      return {
+        suggested_category: currentCategory,
+        suggested_importance: currentImportance,
+        reason: '再評価プロセス中に一時的なエラーが発生しました。',
+      };
+    }
+  }
 }

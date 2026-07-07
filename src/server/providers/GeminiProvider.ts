@@ -235,4 +235,72 @@ ${contextText || '該当する記録が見つかりませんでした。'}
       return 'AI回答生成中にエラーが発生しました。記録一覧をご確認ください。';
     }
   }
+
+  async reEvaluate(
+    content: string,
+    currentCategory: string,
+    currentImportance: number
+  ): Promise<{ suggested_category: string; suggested_importance: number; reason: string }> {
+    const responseSchema = {
+      type: Type.OBJECT,
+      properties: {
+        suggested_category: {
+          type: Type.STRING,
+          description: "Must be one of: 'task', 'event', 'note', 'health', 'finance', 'relationship', 'faith', 'other'. Evaluate if a more accurate category fits better.",
+        },
+        suggested_importance: {
+          type: Type.INTEGER,
+          description: "An importance level from 1 (lowest) to 5 (highest). Crucial: If related to physical/mental health or emotional worries/stress, ALWAYS set to 5.",
+        },
+        reason: {
+          type: Type.STRING,
+          description: "A short, polite reason in Japanese explaining why this category and importance are recommended (about 30-60 characters).",
+        },
+      },
+      required: ['suggested_category', 'suggested_importance', 'reason'],
+    };
+
+    try {
+      const response = await this.callWithRetry(() =>
+        this.ai.models.generateContent({
+          model: 'gemini-3.5-flash',
+          contents: `Please re-evaluate the following memory content and recommend the most suitable category and importance.
+Current Category: ${currentCategory}
+Current Importance: ${currentImportance}
+
+Memory Content:
+"${content}"`,
+          config: {
+            systemInstruction: "You are Ruka's Memory Auditor. Your job is to re-evaluate memories objectively to see if they need adjustments in category and importance (1 to 5). Provide a friendly, helpful explanation in Japanese for your recommendation. Health, stress and wellbeing issues must be categorized as 'health' and assigned importance 5.",
+            responseMimeType: 'application/json',
+            responseSchema: responseSchema,
+          },
+        })
+      );
+
+      const text = response.text;
+      if (!text) {
+        throw new Error('Gemini returned an empty response during re-evaluation');
+      }
+
+      const result = JSON.parse(text.trim()) as {
+        suggested_category: string;
+        suggested_importance: number;
+        reason: string;
+      };
+
+      return {
+        suggested_category: result.suggested_category || currentCategory,
+        suggested_importance: typeof result.suggested_importance === 'number' ? result.suggested_importance : currentImportance,
+        reason: result.reason || '現在の分類が最適であると判断しました。',
+      };
+    } catch (err) {
+      console.error('Gemini re-evaluation failed:', err);
+      return {
+        suggested_category: currentCategory,
+        suggested_importance: currentImportance,
+        reason: '再評価プロセス中に一時的なエラーが発生したため、現在の属性を維持することをお勧めします。',
+      };
+    }
+  }
 }
