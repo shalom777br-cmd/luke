@@ -28,8 +28,10 @@ app.get('/api/status', async (req, res) => {
   const hasSupabase = db.mode === 'supabase';
 
   let tableStatus = { exists: false, error: null as string | null };
+  let publicTableStatus = { exists: false, error: null as string | null };
   if (hasSupabase) {
     tableStatus = await db.checkTableStatus();
+    publicTableStatus = await db.checkPublicTableStatus();
   }
 
   res.json({
@@ -41,6 +43,7 @@ app.get('/api/status', async (req, res) => {
       supabase_configured: hasSupabase,
     },
     table_status: tableStatus,
+    public_table_status: publicTableStatus,
   });
 });
 
@@ -324,6 +327,50 @@ app.get('/api/entry/:id', async (req, res) => {
   } catch (err) {
     console.error('Failed to retrieve shared entry:', err);
     res.status(500).json({ error: 'Failed to retrieve memory entry' });
+  }
+});
+
+// API Route: Get public memories
+app.get('/api/public-memories', async (req, res) => {
+  const { query_text, category } = req.query;
+  try {
+    const publicMemories = await db.queryPublicMemories(
+      query_text ? String(query_text) : undefined,
+      category ? String(category) : undefined
+    );
+    res.json({
+      success: true,
+      memories: publicMemories,
+      table_missing: db.publicTableMissing,
+      column_missing: db.publicOccurredAtMissing,
+      db_mode: db.mode
+    });
+  } catch (err) {
+    console.error('Failed to query public memories:', err);
+    res.status(500).json({ error: 'Failed to retrieve public memories' });
+  }
+});
+
+// API Route: Publish memory entry to public memories
+app.post('/api/public-memories/publish', async (req, res) => {
+  const { title, content, category, tags, occurred_at, author_name } = req.body;
+  if (!title || !content || !category) {
+    res.status(400).json({ error: 'Missing title, content or category' });
+    return;
+  }
+  try {
+    const success = await db.publishMemoryEntry({
+      title,
+      content,
+      category,
+      tags: tags || [],
+      occurred_at: occurred_at || new Date().toISOString(),
+      author_name: author_name || 'Anonymous'
+    });
+    res.json({ success });
+  } catch (err) {
+    console.error('Failed to publish memory:', err);
+    res.status(500).json({ error: 'Failed to publish memory' });
   }
 });
 

@@ -80,6 +80,9 @@ export class MemoryGatewayDb {
   private supabase: SupabaseClient | null = null;
   public mode: 'supabase' | 'local' = 'local';
   private isTableVerified: boolean | null = null;
+  private isPublicTableVerified: boolean | null = null;
+  public publicTableMissing: boolean = false;
+  public publicOccurredAtMissing: boolean = false;
 
   constructor() {
     const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -105,12 +108,25 @@ export class MemoryGatewayDb {
     if (this.mode !== 'supabase' || !this.supabase) {
       return false;
     }
-    if (this.isTableVerified !== null) {
-      return this.isTableVerified;
+    if (this.isTableVerified === true) {
+      return true;
     }
     const status = await this.checkTableStatus();
     this.isTableVerified = status.exists && status.isSchemaValid !== false;
     return this.isTableVerified;
+  }
+
+  // Ensure and check memories table exists status dynamically to avoid relation errors
+  async ensurePublicTableExists(): Promise<boolean> {
+    if (this.mode !== 'supabase' || !this.supabase) {
+      return false;
+    }
+    if (this.isPublicTableVerified === true) {
+      return true;
+    }
+    const status = await this.checkPublicTableStatus();
+    this.isPublicTableVerified = status.exists;
+    return this.isPublicTableVerified;
   }
 
   // Check if the memory_entries table is correctly provisioned
@@ -445,5 +461,232 @@ export class MemoryGatewayDb {
       }
     });
     return Array.from(allTags);
+  }
+
+  // Query public memories in Supabase with local fallback
+  async queryPublicMemories(queryText?: string, category?: string): Promise<any[]> {
+    const localPublicDb = [
+      {
+        id: 'pub-1',
+        title: '全国規模の合同防災・避難計画 2026',
+        content: '2026年9月1日10:00より、全国自治体合同の大規模防災訓練および避難経路の確認プロセスが実施されます。各自、防災バッグの中身のチェックと避難場所の再確認を行ってください。',
+        category: 'event',
+        tags: ['防災', '避難訓練', '安全'],
+        occurred_at: '2026-09-01T10:00:00.000Z',
+        created_at: '2026-07-01T00:00:00.000Z',
+        author_name: '日本防災協会'
+      },
+      {
+        id: 'pub-2',
+        title: '2026年度版花粉症・アレルギー対策ガイド',
+        content: '最新の免疫療法および市販医薬品のトレンドに関する要約。今年はスギ花粉の飛散量が前年比130%と予測されており、早めの抗ヒスタミン薬処方が推奨されています。',
+        category: 'health',
+        tags: ['花粉症', 'アレルギー', '健康'],
+        occurred_at: '2026-03-15T09:00:00.000Z',
+        created_at: '2026-03-01T00:00:00.000Z',
+        author_name: 'ルカ健康推進委員会'
+      },
+      {
+        id: 'pub-3',
+        title: '生成AIプロンプトエンジニアリング基礎知識',
+        content: 'GeminiやClaude等で望む出力を得るための役割付与(Persona)・Few-Shot学習プロンプトの解説。回答に一貫性を持たせるため、JSONスキーマを明示してシステムプロンプトに組み込む手法が有効です。',
+        category: 'note',
+        tags: ['AI', 'プロンプト', '技術'],
+        occurred_at: '2026-07-01T12:00:00.000Z',
+        created_at: '2026-07-01T12:00:00.000Z',
+        author_name: 'AI開発チーム'
+      },
+      {
+        id: 'pub-4',
+        title: '新NISA成長投資枠と積立分散投資の最適配分',
+        content: '長期資産形成を目的としたアセットアロケーション例。全世界株式インデックス（オルカン）と米国株（S&P500）の組み合わせにおいて、信託報酬や分配方針の比較を行い複利効果を最大化する方法。',
+        category: 'finance',
+        tags: ['投資', 'NISA', '資産運用'],
+        occurred_at: '2026-05-10T15:30:00.000Z',
+        created_at: '2026-05-10T15:30:00.000Z',
+        author_name: 'ファイナンシャルラボ'
+      },
+      {
+        id: 'pub-5',
+        title: '良好な人間関係を維持するためのアクティブリスニング術',
+        content: '相手の言葉を遮らずに傾聴し、感情に共感を示す「バックトラッキング（おうむ返し）」の具体例。カウンセリングや家族間の対話、ビジネスにおける信頼関係（ラポール）構築に欠かせない対話法です。',
+        category: 'relationship',
+        tags: ['コミュニケーション', '心理学', '人間関係'],
+        occurred_at: '2026-06-20T18:00:00.000Z',
+        created_at: '2026-06-20T18:00:00.000Z',
+        author_name: '共感対話サークル'
+      }
+    ];
+
+    const publicTableExists = await this.ensurePublicTableExists();
+    if (this.mode === 'supabase' && this.supabase && publicTableExists) {
+      try {
+        let query = this.supabase.from('memories').select('*');
+        if (category && category !== 'all') {
+          query = query.eq('category', category);
+        }
+        
+        let data: any[] | null = null;
+        if (!this.publicOccurredAtMissing) {
+          const { data: orderedData, error } = await query.order('occurred_at', { ascending: false });
+          if (error) {
+            if (error.message?.includes('occurred_at') && error.message?.includes('does not exist')) {
+              this.publicOccurredAtMissing = true;
+              const { data: unorderedData, error: secondError } = await query;
+              if (secondError) throw secondError;
+              data = unorderedData;
+            } else {
+              throw error;
+            }
+          } else {
+            data = orderedData;
+          }
+        } else {
+          const { data: unorderedData, error } = await query;
+          if (error) throw error;
+          data = unorderedData;
+        }
+
+        this.publicTableMissing = false;
+        
+        // Sort in memory using whatever date fields are available
+        const sortedList = (data || []).sort((a: any, b: any) => {
+          const dateA = a.occurred_at || a.created_at || '';
+          const dateB = b.occurred_at || b.created_at || '';
+          return new Date(dateB).getTime() - new Date(dateA).getTime();
+        });
+
+        return this.filterLocalPublic(sortedList, queryText, category);
+      } catch (err: any) {
+        if (err.code === '42P01' || err.message?.includes('relation') || err.message?.includes('does not exist') || err.message?.includes('cache')) {
+          this.publicTableMissing = true;
+        }
+        console.log('memories query exception:', err?.message || err);
+        return this.filterLocalPublic(localPublicDb, queryText, category);
+      }
+    } else {
+      // If table is missing, ensure state is set to missing so UI displays notice
+      if (this.mode === 'supabase') {
+        this.publicTableMissing = true;
+      } else {
+        this.publicTableMissing = false;
+      }
+      return this.filterLocalPublic(localPublicDb, queryText, category);
+    }
+  }
+
+  // Check if the memories table is correctly provisioned
+  async checkPublicTableStatus(): Promise<{ exists: boolean; error: string | null }> {
+    if (this.mode !== 'supabase' || !this.supabase) {
+      return { exists: false, error: 'Supabase client not initialized' };
+    }
+    try {
+      const { error } = await this.supabase
+        .from('memories')
+        .select('id, occurred_at')
+        .limit(1);
+
+      if (!error) {
+        this.publicTableMissing = false;
+        this.publicOccurredAtMissing = false;
+        return { exists: true, error: null };
+      }
+
+      if (error.message?.includes('occurred_at') && error.message?.includes('does not exist')) {
+        this.publicTableMissing = false;
+        this.publicOccurredAtMissing = true;
+        return { exists: true, error: null };
+      }
+
+      if (error.code === '42P01' || error.message?.includes('relation') || error.message?.includes('does not exist') || error.message?.includes('cache')) {
+        this.publicTableMissing = true;
+        this.publicOccurredAtMissing = false;
+        return { exists: false, error: 'table_missing' };
+      }
+
+      // Try selecting without occurred_at
+      const { error: existError } = await this.supabase
+        .from('memories')
+        .select('id')
+        .limit(1);
+
+      if (existError) {
+        if (existError.code === '42P01' || existError.message?.includes('relation') || existError.message?.includes('does not exist') || existError.message?.includes('cache')) {
+          this.publicTableMissing = true;
+          return { exists: false, error: 'table_missing' };
+        }
+        return { exists: false, error: existError.message };
+      }
+
+      this.publicTableMissing = false;
+      this.publicOccurredAtMissing = true;
+      return { exists: true, error: null };
+    } catch (err: any) {
+      return { exists: false, error: err?.message || 'Unknown error' };
+    }
+  }
+
+  private filterLocalPublic(list: any[], queryText?: string, category?: string): any[] {
+    let results = [...list];
+    if (category && category !== 'all') {
+      results = results.filter(item => item.category === category);
+    }
+    if (queryText && queryText.trim()) {
+      const q = queryText.toLowerCase();
+      results = results.filter(item => 
+        (item.title && item.title.toLowerCase().includes(q)) ||
+        (item.content && item.content.toLowerCase().includes(q)) ||
+        (item.tags && item.tags.some((t: string) => t.toLowerCase().includes(q)))
+      );
+    }
+    return results;
+  }
+
+  // Publish memory to public database
+  async publishMemoryEntry(entry: { title: string; content: string; category: string; tags: string[]; occurred_at: string; author_name?: string }): Promise<boolean> {
+    const publicTableExists = await this.ensurePublicTableExists();
+    if (this.mode === 'supabase' && this.supabase && publicTableExists) {
+      try {
+        const payload: any = {
+          id: 'pub-' + Math.random().toString(36).substring(2, 11),
+          title: entry.title,
+          content: entry.content,
+          category: entry.category,
+          tags: entry.tags,
+          created_at: new Date().toISOString(),
+          author_name: entry.author_name || 'Anonymous'
+        };
+
+        if (!this.publicOccurredAtMissing) {
+          payload.occurred_at = entry.occurred_at;
+        }
+
+        const { error } = await this.supabase
+          .from('memories')
+          .insert(payload);
+
+        if (error) {
+          if (error.message?.includes('occurred_at') && error.message?.includes('does not exist')) {
+            this.publicOccurredAtMissing = true;
+            delete payload.occurred_at;
+            const { error: retryError } = await this.supabase
+              .from('memories')
+              .insert(payload);
+            if (retryError) {
+              console.warn('Failed to insert into memories on retry:', retryError.message);
+              return false;
+            }
+            return true;
+          }
+          console.warn('Failed to insert into memories:', error.message);
+          return false;
+        }
+        return true;
+      } catch (err) {
+        console.error('publishMemoryEntry error:', err);
+        return false;
+      }
+    }
+    return true;
   }
 }
