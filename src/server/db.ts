@@ -227,6 +227,36 @@ export class MemoryGatewayDb {
     }
   }
 
+  // Get a single memory entry by ID (for sharing)
+  async getEntryById(id: string): Promise<MemoryEntry | null> {
+    // 1. Try to find locally first
+    const db = readLocalDb();
+    const localEntry = db.find((entry) => entry.id === id);
+    if (localEntry) {
+      return localEntry;
+    }
+
+    // 2. Try to find on Supabase if configured
+    const tableExists = await this.ensureTableExists();
+    if (this.mode === 'supabase' && this.supabase && tableExists) {
+      try {
+        const { data, error } = await this.supabase
+          .from('memory_entries')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle();
+
+        if (error) {
+          throw error;
+        }
+        return data as MemoryEntry | null;
+      } catch (err: any) {
+        console.error('Supabase query by ID failed:', err?.message || err);
+      }
+    }
+    return null;
+  }
+
   // Query memory entries based on filters
   async queryEntries(filters: SearchFilters): Promise<MemoryEntry[]> {
     const localResults = this.queryEntriesLocally(filters);

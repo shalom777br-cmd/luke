@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Mic,
   Square,
@@ -27,7 +27,12 @@ import {
   AlertTriangle,
   Lightbulb,
   X,
-  Trash2
+  Trash2,
+  FileJson,
+  Download,
+  Copy,
+  Share2,
+  Star
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -36,6 +41,7 @@ import {
   StructuredMemory,
   SearchFilters
 } from './types';
+import { MemoryTrendChart } from './components/MemoryTrendChart';
 
 // Supported profiles to showcase the "shared" context capability
 const USER_PROFILES = [
@@ -49,7 +55,7 @@ const CATEGORY_DETAILS: Record<MemoryCategory, { label: string; icon: any; color
   task: { label: 'タスク', icon: CheckSquare, color: 'text-sky-600', bg: 'bg-sky-50', border: 'border-sky-200' },
   event: { label: '予定 / 出来事', icon: CalendarDays, color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-200' },
   note: { label: 'メモ / 考察', icon: BookOpen, color: 'text-slate-600', bg: 'bg-slate-100', border: 'border-slate-300' },
-  health: { label: '健康 / 体調', icon: Activity, color: 'text-teal-600', bg: 'bg-teal-50', border: 'border-teal-200' },
+  health: { label: '健康 / 体調 / お悩み', icon: Activity, color: 'text-teal-600', bg: 'bg-teal-50', border: 'border-teal-200' },
   finance: { label: '会計 / 財務', icon: Coins, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' },
   relationship: { label: '人間関係', icon: Heart, color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-200' },
   faith: { label: '価値観、精神、信仰', icon: Sparkles, color: 'text-violet-600', bg: 'bg-violet-50', border: 'border-violet-200' },
@@ -128,6 +134,7 @@ export default function App() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [queryText, setQueryText] = useState('');
+  const [minImportance, setMinImportance] = useState<number>(0);
   const [isSearching, setIsSearching] = useState(false);
   
   // Retrieved entries and AI synthesis answer
@@ -135,9 +142,59 @@ export default function App() {
   const [aiAnswer, setAiAnswer] = useState<string | undefined>(undefined);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
 
+  // Filtered memory entries based on Importance client-side
+  const filteredEntries = useMemo(() => {
+    if (minImportance === 0) return matchedEntries;
+    return matchedEntries.filter((entry) => entry.importance >= minImportance);
+  }, [matchedEntries, minImportance]);
+
   // UI Expand / collapse states
   const [expandedEntries, setExpandedEntries] = useState<Record<string, boolean>>({});
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+
+  // JSON Viewer and Export States
+  const [showDbJsonModal, setShowDbJsonModal] = useState(false);
+  const [selectedEntryJson, setSelectedEntryJson] = useState<MemoryEntry | null>(null);
+
+  // Sharing States
+  const [sharedModalEntry, setSharedModalEntry] = useState<MemoryEntry | null>(null);
+  const [isSharedModalLoading, setIsSharedModalLoading] = useState(false);
+
+  // Handle Close Shared Modal and clean query parameter
+  const handleCloseSharedModal = () => {
+    setSharedModalEntry(null);
+    if (typeof window !== 'undefined' && window.history.pushState) {
+      const newUrl = window.location.origin + window.location.pathname;
+      window.history.pushState({ path: newUrl }, '', newUrl);
+    }
+  };
+
+  // Generate and Copy Share URL helper
+  const handleShareEntry = (entry: MemoryEntry) => {
+    if (typeof window !== 'undefined') {
+      const shareUrl = `${window.location.origin}${window.location.pathname}?shareId=${entry.id}`;
+      navigator.clipboard.writeText(shareUrl);
+      showToast('success', 'この記憶ログの共有用URLをクリップボードにコピーしました！');
+    }
+  };
+
+  const handleCopyToClipboard = (text: string, message: string = 'コピーしました！') => {
+    navigator.clipboard.writeText(text);
+    showToast('success', message);
+  };
+
+  const handleDownloadJson = (filename: string, jsonContent: any) => {
+    const blob = new Blob([JSON.stringify(jsonContent, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('success', `${filename} をダウンロードしました。`);
+  };
 
   // Audio waveform animation helper
   const [waveHeights, setWaveHeights] = useState<number[]>([15, 10, 20, 15, 30, 10, 25, 15, 10]);
@@ -145,6 +202,35 @@ export default function App() {
   // Fetch diagnostics on mount
   useEffect(() => {
     fetchSystemStatus();
+  }, []);
+
+  // Load shared entry if shareId is in the URL query parameter
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const shareId = params.get('shareId');
+      if (shareId) {
+        setIsSharedModalLoading(true);
+        fetch(`/api/entry/${shareId}`)
+          .then((res) => {
+            if (!res.ok) throw new Error('Shared entry not found');
+            return res.json();
+          })
+          .then((data) => {
+            if (data.entry) {
+              setSharedModalEntry(data.entry);
+              showToast('success', '共有された記憶ログを読み込みました。');
+            }
+          })
+          .catch((err) => {
+            console.error('Failed to load shared entry:', err);
+            showToast('error', '共有された記憶ログの読み込みに失敗しました。');
+          })
+          .finally(() => {
+            setIsSharedModalLoading(false);
+          });
+      }
+    }
   }, []);
 
   // Fetch entries and tags when user profile, filters, or lastCompiledEntry changes
@@ -1153,6 +1239,81 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
               )}
             </AnimatePresence>
 
+            {/* Timothy Health & Worry Observer Panel */}
+            <div className="bg-white rounded-2xl border border-teal-200 p-6 shadow-xs space-y-4 relative overflow-hidden">
+              <div className="absolute top-0 right-0 h-16 w-16 bg-teal-500/5 rounded-full blur-xl pointer-events-none" />
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                <Activity className="h-4.5 w-4.5 text-teal-600 animate-pulse" />
+                <h3 className="text-sm font-bold text-slate-900">テモテの心身・お悩み観察モニタ</h3>
+                <span className="ml-auto bg-teal-50 text-teal-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-teal-100">
+                  <span className="h-1.5 w-1.5 rounded-full bg-teal-500 animate-ping" />
+                  <span>リアルタイム観測中</span>
+                </span>
+              </div>
+
+              {(() => {
+                // Find health worries
+                const healthWorries = matchedEntries.filter(
+                  (entry) =>
+                    entry.category === 'health' ||
+                    entry.tags.includes('お悩み') ||
+                    entry.tags.includes('テモテ観察中')
+                );
+
+                if (healthWorries.length > 0) {
+                  return (
+                    <div className="space-y-3">
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        現在、心身の健康状態やデリケートなお悩みに関する記録（<strong>{healthWorries.length}件</strong>）が検出され、秘書テモテが最優先で観察しています。
+                      </p>
+                      <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                        {healthWorries.map((worry) => (
+                          <div key={worry.id} className="bg-teal-50/40 rounded-xl p-3 border border-teal-100/80 space-y-2 text-xs">
+                            <div className="flex items-center justify-between flex-wrap gap-1">
+                              <span className="text-[10px] bg-teal-100 text-teal-800 px-1.5 py-0.5 rounded-sm font-bold uppercase tracking-wider flex items-center gap-1">
+                                <Heart className="h-2.5 w-2.5 fill-teal-500 text-teal-500" />
+                                観察中のお悩み (重要度★{worry.importance})
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                {worry.occurred_at ? new Date(worry.occurred_at).toLocaleDateString('ja-JP') : new Date(worry.created_at).toLocaleDateString('ja-JP')}
+                              </span>
+                            </div>
+                            <h4 className="font-bold text-slate-800">{worry.summary}</h4>
+                            <p className="text-[11px] text-slate-600 leading-relaxed bg-white/60 p-2 rounded-lg border border-slate-100/50">
+                              {worry.raw_input}
+                            </p>
+                            {/* Custom caring comment from Timothy based on importance */}
+                            <div className="bg-white rounded-lg p-2.5 border border-teal-100/60 shadow-2xs space-y-1">
+                              <div className="flex items-center gap-1 text-teal-700 font-bold text-[10px]">
+                                <Cpu className="h-3 w-3 text-teal-600" />
+                                <span>秘書テモテの観察レポート:</span>
+                              </div>
+                              <p className="text-[11px] text-slate-600 leading-relaxed italic">
+                                「重要度{worry.importance}の心身アラートを検知しました。少しご無理をなさっているかもしれません。お体に障る前に、どうか水分を十分に取り、温かいお布団でお休みください。重要タスクのスケジュール調整は、私が喜んで代行いたします。」
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div className="text-center py-6 text-slate-400 bg-slate-50/50 rounded-xl border border-dashed border-slate-200 text-xs space-y-2">
+                      <Heart className="h-6 w-6 text-slate-300 mx-auto" />
+                      <div>
+                        <p className="font-semibold text-slate-500">特筆すべきお悩みは観察されていません</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">現在、心身ともにお健やかにお過ごしのご様子です。</p>
+                      </div>
+                      <div className="bg-white/80 p-2.5 rounded-lg border border-slate-100 text-left max-w-xs mx-auto text-[11px] text-slate-500 italic leading-normal">
+                        <strong>テモテ:</strong> 「健康的なコンディションですね！もし体調の違和感やメンタルの不調、気がかりなお悩みがあれば、どんなに小さなことでも声で吹き込んでおいてください。私がしっかり観測し、最優先でサポートします。」
+                      </div>
+                    </div>
+                  );
+                }
+              })()}
+            </div>
+
             {/* Timothy Task Queue Panel */}
             <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
               <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
@@ -1322,8 +1483,8 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
                 </div>
               </div>
 
-              {/* Advanced Tags and Date filters in expandable Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-slate-100">
+              {/* Advanced Tags, Date, and Importance filters in expandable Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-slate-100">
                 
                 {/* Available tags chips list */}
                 <div className="space-y-1.5">
@@ -1379,6 +1540,50 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
                   </div>
                 </div>
 
+                {/* Importance Rating filter */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
+                    <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-400" />
+                    <span>重要度フィルタ (★の数):</span>
+                  </label>
+                  <div className="flex flex-col gap-1.5">
+                    <select
+                      id="importance-filter-select"
+                      value={minImportance}
+                      onChange={(e) => setMinImportance(Number(e.target.value))}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-700 bg-slate-50/50 focus:outline-none focus:border-indigo-500 font-semibold cursor-pointer transition-colors"
+                    >
+                      <option value={0}>すべて表示 (★0〜5)</option>
+                      <option value={1}>★1 以上のみ表示</option>
+                      <option value={2}>★2 以上のみ表示</option>
+                      <option value={3}>★3 以上のみ表示 (重要度:中+)</option>
+                      <option value={4}>★4 以上のみ表示 (重要度:高)</option>
+                      <option value={5}>★5 のみ表示 (最重要)</option>
+                    </select>
+                    
+                    {/* Interactive Star Buttons */}
+                    <div className="flex items-center gap-1 mt-0.5 justify-between bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                      <span className="text-[10px] text-slate-400 font-medium">クイック選択:</span>
+                      <div className="flex items-center gap-0.5">
+                        {[0, 1, 2, 3, 4, 5].map((val) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setMinImportance(val)}
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono transition-all duration-150 ${
+                              minImportance === val
+                                ? 'bg-indigo-600 text-white shadow-xs'
+                                : 'text-slate-500 hover:bg-slate-200 hover:text-slate-700'
+                            }`}
+                          >
+                            {val === 0 ? '全' : `★${val}`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
               </div>
 
             </div>
@@ -1425,20 +1630,39 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
               )}
             </AnimatePresence>
 
+             {/* Memory Trend Analytics */}
+            <MemoryTrendChart entries={filteredEntries} />
+
             {/* Ingested Stream Results list */}
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  記憶ログ一覧 ({matchedEntries.length}件)
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>記憶ログ一覧 ({filteredEntries.length}件)</span>
+                  {minImportance > 0 && (
+                    <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold">
+                      ★{minImportance}以上
+                    </span>
+                  )}
                 </span>
-                <span className="text-xs text-slate-400">
-                  空間: {currentUser.name}
-                </span>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowDbJsonModal(true)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 rounded-lg text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer shadow-2xs"
+                    title="現在の記憶データをJSONファイル形式で表示・エクスポート"
+                  >
+                    <FileJson className="h-3.5 w-3.5 text-indigo-600" />
+                    <span>JSONファイル表示</span>
+                  </button>
+                  <span className="text-xs text-slate-400">
+                    空間: {currentUser.name}
+                  </span>
+                </div>
               </div>
 
-              {matchedEntries.length > 0 ? (
+              {filteredEntries.length > 0 ? (
                 <div className="space-y-3.5">
-                  {matchedEntries.map((entry) => {
+                  {filteredEntries.map((entry) => {
                     const details = CATEGORY_DETAILS[entry.category] || CATEGORY_DETAILS.other;
                     const Icon = details.icon;
                     const isExpanded = !!expandedEntries[entry.id];
@@ -1510,14 +1734,24 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
                                     day: 'numeric'
                                   })}
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteEntry(entry.id)}
-                              className="p-1.5 bg-slate-50 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-400 hover:text-rose-600 rounded-lg transition-all active:scale-95 flex items-center justify-center cursor-pointer"
-                              title="記憶を削除"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleShareEntry(entry)}
+                                className="p-1.5 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-slate-400 hover:text-indigo-600 rounded-lg transition-all active:scale-95 flex items-center justify-center cursor-pointer"
+                                title="共有用URLをコピー"
+                              >
+                                <Share2 className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteEntry(entry.id)}
+                                className="p-1.5 bg-slate-50 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-400 hover:text-rose-600 rounded-lg transition-all active:scale-95 flex items-center justify-center cursor-pointer"
+                                title="記憶を削除"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
                           </div>
 
                         </div>
@@ -1595,6 +1829,45 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
                                   </div>
                                 )}
 
+                                {/* Toggle JSON view of this entry */}
+                                <div className="border-t border-slate-100/80 pt-2.5 flex items-center justify-between text-[11px]">
+                                  <span className="text-[10px] text-slate-400 font-mono">
+                                    ID: {entry.id}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedEntryJson(selectedEntryJson?.id === entry.id ? null : entry)}
+                                    className="inline-flex items-center gap-1 font-semibold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
+                                  >
+                                    <FileJson className="h-3 w-3" />
+                                    <span>{selectedEntryJson?.id === entry.id ? 'JSONを閉じる' : 'JSON表示'}</span>
+                                  </button>
+                                </div>
+
+                                {selectedEntryJson?.id === entry.id && (
+                                  <div className="bg-slate-900 text-slate-100 rounded-lg p-3 text-[11px] font-mono whitespace-pre overflow-x-auto relative mt-2 max-h-60 border border-slate-800">
+                                    <div className="absolute top-2 right-2 flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCopyToClipboard(JSON.stringify(entry, null, 2), '個別のJSONをコピーしました。')}
+                                        className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded text-slate-300 hover:text-white transition-colors cursor-pointer"
+                                        title="JSONをコピー"
+                                      >
+                                        <Copy className="h-3 w-3" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDownloadJson(`memory-${entry.id}.json`, entry)}
+                                        className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded text-slate-300 hover:text-white transition-colors cursor-pointer"
+                                        title="JSONをダウンロード"
+                                      >
+                                        <Download className="h-3 w-3" />
+                                      </button>
+                                    </div>
+                                    {JSON.stringify(entry, null, 2)}
+                                  </div>
+                                )}
+
                               </motion.div>
                             )}
                           </AnimatePresence>
@@ -1639,6 +1912,261 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
           </div>
         </div>
       </footer>
+
+      {/* DB JSON Export / View Modal */}
+      <AnimatePresence>
+        {showDbJsonModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-2xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden"
+            >
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-lg bg-indigo-50 flex items-center justify-center border border-indigo-100">
+                    <FileJson className="h-4 w-4 text-indigo-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">入力内容のJSONファイル表示</h3>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      現在の一致する記憶ログデータ ({filteredEntries.length}件) をJSONフォーマットで展開しています。
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowDbJsonModal(false)}
+                  className="p-1.5 hover:bg-slate-200 text-slate-400 hover:text-slate-600 rounded-lg transition-colors cursor-pointer"
+                  title="閉じる"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 overflow-y-auto flex-1 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-slate-500">
+                  <span>
+                    全データのインデックス・メタデータ、タグ、AI構造化オブジェクトを完全なJSON配列として表現。
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyToClipboard(JSON.stringify(filteredEntries, null, 2), 'データベース全体のJSONをコピーしました。')}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 rounded-lg text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      <span>JSONをコピー</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadJson('ruka-memories-export.json', filteredEntries)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition-all active:scale-95 shadow-sm cursor-pointer"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      <span>ダウンロード (.json)</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 text-slate-100 rounded-xl p-4 text-xs font-mono whitespace-pre overflow-x-auto max-h-[50vh] border border-slate-800 relative shadow-inner">
+                  {filteredEntries.length > 0 ? (
+                    JSON.stringify(filteredEntries, null, 2)
+                  ) : (
+                    <span className="text-slate-500 italic">データがありません。重要度フィルタに該当する記憶ログが存在しません。</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
+                <span>スキーマ標準: Standard Memory Schema v1</span>
+                <button
+                  type="button"
+                  onClick={() => setShowDbJsonModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                >
+                  閉じる
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Shared Memory Detail Modal */}
+      <AnimatePresence>
+        {sharedModalEntry && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-white rounded-2xl max-w-2xl w-full flex flex-col shadow-2xl border border-slate-200 overflow-hidden"
+            >
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-lg bg-teal-50 flex items-center justify-center border border-teal-100">
+                    <Share2 className="h-4 w-4 text-teal-600 animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">共有された記憶ノード</h3>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      リンクを介してこの特別な記憶データが正常に展開されました。
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCloseSharedModal}
+                  className="p-1.5 hover:bg-slate-200 text-slate-400 hover:text-slate-600 rounded-lg transition-colors cursor-pointer"
+                  title="閉じる"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 overflow-y-auto space-y-5">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  {/* Category Pill */}
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const details = CATEGORY_DETAILS[sharedModalEntry.category] || CATEGORY_DETAILS.other;
+                      const Icon = details.icon;
+                      return (
+                        <span className={`inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full ${details.bg} ${details.color} border ${details.border}`}>
+                          <Icon className="h-3.5 w-3.5" />
+                          <span>{details.label}</span>
+                        </span>
+                      );
+                    })()}
+
+                    {/* Importance */}
+                    <span className="text-slate-300 text-xs font-mono font-medium flex items-center ml-1">
+                      {'★'.repeat(sharedModalEntry.importance)}
+                      <span className="text-slate-200 font-normal">
+                        {'★'.repeat(Math.max(0, 5 - sharedModalEntry.importance))}
+                      </span>
+                    </span>
+                  </div>
+
+                  {/* Date */}
+                  <span className="text-xs text-slate-400 font-mono">
+                    発生日時:{' '}
+                    {sharedModalEntry.occurred_at
+                      ? new Date(sharedModalEntry.occurred_at).toLocaleString('ja-JP', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })
+                      : new Date(sharedModalEntry.created_at).toLocaleString('ja-JP', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}
+                  </span>
+                </div>
+
+                {/* Title */}
+                <div className="space-y-1">
+                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">要約タイトル</span>
+                  <h2 className="text-lg font-extrabold text-slate-900 leading-snug">
+                    {sharedModalEntry.summary}
+                  </h2>
+                </div>
+
+                {/* Raw Input detail */}
+                <div className="space-y-1.5">
+                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">原文音声・入力ログ</span>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-xs text-slate-700 leading-relaxed font-mono whitespace-pre-wrap shadow-inner">
+                    {sharedModalEntry.raw_input}
+                  </div>
+                </div>
+
+                {/* AI Extracted Entities */}
+                {(() => {
+                  const hasEntities =
+                    sharedModalEntry.structured.entities.people.length > 0 ||
+                    sharedModalEntry.structured.entities.places.length > 0 ||
+                    sharedModalEntry.structured.entities.dates.length > 0;
+                  if (!hasEntities) return null;
+                  return (
+                    <div className="bg-indigo-50/45 border border-indigo-100/50 rounded-xl p-3.5 text-xs space-y-2">
+                      <span className="text-[10px] text-indigo-500 font-bold uppercase tracking-wider block">AI抽出 エンティティ分析:</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {sharedModalEntry.structured.entities.people.length > 0 && (
+                          <div className="space-y-0.5">
+                            <span className="text-slate-400 text-[10px]">人物</span>
+                            <p className="text-slate-800 font-semibold">{sharedModalEntry.structured.entities.people.join(', ')}</p>
+                          </div>
+                        )}
+                        {sharedModalEntry.structured.entities.places.length > 0 && (
+                          <div className="space-y-0.5">
+                            <span className="text-slate-400 text-[10px]">場所</span>
+                            <p className="text-slate-800 font-semibold">{sharedModalEntry.structured.entities.places.join(', ')}</p>
+                          </div>
+                        )}
+                        {sharedModalEntry.structured.entities.dates.length > 0 && (
+                          <div className="space-y-0.5">
+                            <span className="text-slate-400 text-[10px]">時代表現</span>
+                            <p className="text-slate-800 font-semibold">{sharedModalEntry.structured.entities.dates.join(', ')}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Tags */}
+                {sharedModalEntry.tags.length > 0 && (
+                  <div className="space-y-1.5">
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">タグ一覧</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {sharedModalEntry.tags.map((tag, idx) => (
+                        <span
+                          key={idx}
+                          className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200"
+                        >
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
+                <button
+                  type="button"
+                  onClick={() => handleCopyToClipboard(
+                    `${sharedModalEntry.summary}\n\n[詳細]\n${sharedModalEntry.raw_input}`,
+                    '記憶のテキスト要約をコピーしました！'
+                  )}
+                  className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  <span>詳細をテキストコピー</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCloseSharedModal}
+                  className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
+                >
+                  閉じる
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );

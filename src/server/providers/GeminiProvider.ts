@@ -29,7 +29,7 @@ export class GeminiProvider extends BaseProvider {
       properties: {
         category: {
           type: Type.STRING,
-          description: "Must be one of: 'task', 'event', 'note', 'health', 'finance', 'relationship', 'faith', 'other'. Categorize as 'task' if it is an actionable todo or chore. Categorize as 'faith' if it represents personal values, spirituality, faith elements, vision, or desires/wishes (価値観、精神、信仰、ビジョン、願い).",
+          description: "Must be one of: 'task', 'event', 'note', 'health', 'finance', 'relationship', 'faith', 'other'. Categorize as 'health' if the input discusses physical or mental health, stress, anxiety, sleep, fatigue, mood, or somatic worries (健康状態、精神衛生、ストレス、不安、不眠、疲労、気分の変化、お悩み). Categorize as 'task' if it is an actionable todo or chore. Categorize as 'faith' if it represents personal values, spirituality, faith elements, vision, or desires/wishes (価値観、精神、信仰、ビジョン、願い).",
         },
         summary: {
           type: Type.STRING,
@@ -63,11 +63,11 @@ export class GeminiProvider extends BaseProvider {
         tags: {
           type: Type.ARRAY,
           items: { type: Type.STRING },
-          description: "Array of 1 to 4 relevant tags in Japanese. Avoid duplicates.",
+          description: "Array of 1 to 4 relevant tags in Japanese. If the input is related to physical or mental health/mental health status, ALWAYS include 'お悩み' and 'テモテ観察中' in the tags. Avoid duplicates.",
         },
         importance: {
           type: Type.INTEGER,
-          description: "Inferred importance from 1 (lowest) to 5 (highest). Defaults to 3.",
+          description: "Inferred importance from 1 (lowest) to 5 (highest). Defaults to 3. Crucial: If it is related to physical or mental health/stress/worries (健康状態・精神衛生・心身の不調・お悩み), ALWAYS set importance to 5.",
         },
         action_required: {
           type: Type.BOOLEAN,
@@ -79,7 +79,7 @@ export class GeminiProvider extends BaseProvider {
         },
         task_explanation: {
           type: Type.STRING,
-          description: "A short explanation in Japanese explaining how Timothy the AI can execute this task, or why it requires the user's personal action.",
+          description: "A short explanation in Japanese explaining how Timothy the AI can execute this task, or why it requires the user's personal action. If it is a health/mental health worry, explain how Secretary Timothy (秘書テモテ) will gently monitor and support the user.",
         },
       },
       required: ['category', 'summary', 'entities', 'occurred_at', 'tags', 'importance', 'action_required', 'is_ai_executable', 'task_explanation'],
@@ -91,10 +91,15 @@ export class GeminiProvider extends BaseProvider {
         contents: `Please convert the following natural language memory or voice log into our AI common language JSON structure.
 Reference datetime to resolve relative date indicators: ${todayStr}
 
+CRITICAL REQUIREMENT: If the input is related to physical health, mental health, stress, fatigue, mood, anxiety, or somatic worries, make sure to:
+- Set 'category' to 'health'.
+- Set 'importance' to 5.
+- Ensure the 'tags' array contains "お悩み" and "テモテ観察中".
+
 Natural language raw input:
 "${rawInput}"`,
         config: {
-          systemInstruction: 'You are Ruka\'s Memory Gateway Engine. You specialize in compiling unstructured voice and text logs into highly precise, structured schemas. Strictly output JSON conforming to the schema. Ensure Category is exactly one of the eight specified categories.',
+          systemInstruction: 'You are Ruka\'s Memory Gateway Engine. You specialize in compiling unstructured voice and text logs into highly precise, structured schemas. Strictly output JSON conforming to the schema. Ensure Category is exactly one of the eight specified categories. Emphasize physical and mental health inputs as highest importance (5) with "お悩み" and "テモテ観察中" tags.',
           responseMimeType: 'application/json',
           responseSchema: responseSchema,
         },
@@ -145,7 +150,7 @@ ${contextText || '該当する記録が見つかりませんでした。'}
         model: 'gemini-3.5-flash',
         contents: prompt,
         config: {
-          systemInstruction: 'You are Ruka (ルカ), an AI Companion and Shared Memory Compiler. Synthesize the provided historical logs to answer the user\'s natural language query truthfully and concisely in Japanese. Use Markdown for layout if appropriate.',
+          systemInstruction: 'You are Ruka (ルカ), an AI Companion and Shared Memory Compiler. Synthesize the provided historical logs to answer the user\'s natural language query truthfully and concisely in Japanese. Use Markdown for layout if appropriate. Crucially, if the historical logs contain health-related items or physical/mental worries (especially those flagged with "お悩み" or "テモテ観察中"), include a warm, empathetic commentary or message from "Secretary Timothy (秘書テモテ)" at the end or embedded nicely, showing that Timothy is closely observing, caring for, and ready to support the user\'s wellbeing and task adjustments.',
         },
       });
 

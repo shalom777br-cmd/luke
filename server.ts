@@ -196,6 +196,26 @@ app.get('/api/tags', async (req, res) => {
   }
 });
 
+// API Route: Get a specific memory entry by ID (for sharing)
+app.get('/api/entry/:id', async (req, res) => {
+  const { id } = req.params;
+  if (!id) {
+    res.status(400).json({ error: 'Missing entry id' });
+    return;
+  }
+  try {
+    const entry = await db.getEntryById(id);
+    if (!entry) {
+      res.status(404).json({ error: 'Memory entry not found' });
+      return;
+    }
+    res.json({ entry });
+  } catch (err) {
+    console.error('Failed to retrieve shared entry:', err);
+    res.status(500).json({ error: 'Failed to retrieve memory entry' });
+  }
+});
+
 // Setup Vite middleware or static serving for standard hosting / local development
 if (!process.env.VERCEL) {
   const startLocalServer = async () => {
