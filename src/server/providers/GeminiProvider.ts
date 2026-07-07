@@ -29,7 +29,7 @@ export class GeminiProvider extends BaseProvider {
       properties: {
         category: {
           type: Type.STRING,
-          description: "Must be one of: 'task', 'value', 'event', 'note', 'health', 'finance', 'relationship', 'faith', 'other'. Categorize as 'task' if it is an actionable todo or chore. Categorize as 'value' if it represents personal values, core beliefs, faith elements, vision, or desires/wishes (価値観・信仰・ビジョン・願い).",
+          description: "Must be one of: 'task', 'event', 'note', 'health', 'finance', 'relationship', 'faith', 'other'. Categorize as 'task' if it is an actionable todo or chore. Categorize as 'faith' if it represents personal values, spirituality, faith elements, vision, or desires/wishes (価値観、精神、信仰、ビジョン、願い).",
         },
         summary: {
           type: Type.STRING,
@@ -94,7 +94,7 @@ Reference datetime to resolve relative date indicators: ${todayStr}
 Natural language raw input:
 "${rawInput}"`,
         config: {
-          systemInstruction: 'You are Ruka\'s Memory Gateway Engine. You specialize in compiling unstructured voice and text logs into highly precise, structured schemas. Strictly output JSON conforming to the schema. Ensure Category is exactly one of the nine specified categories (including task and value).',
+          systemInstruction: 'You are Ruka\'s Memory Gateway Engine. You specialize in compiling unstructured voice and text logs into highly precise, structured schemas. Strictly output JSON conforming to the schema. Ensure Category is exactly one of the eight specified categories.',
           responseMimeType: 'application/json',
           responseSchema: responseSchema,
         },

@@ -46,13 +46,12 @@ const USER_PROFILES = [
 
 const CATEGORY_DETAILS: Record<MemoryCategory, { label: string; icon: any; color: string; bg: string; border: string }> = {
   task: { label: 'タスク', icon: CheckSquare, color: 'text-sky-600', bg: 'bg-sky-50', border: 'border-sky-200' },
-  value: { label: '価値観・信仰・願い', icon: Heart, color: 'text-fuchsia-600', bg: 'bg-fuchsia-50', border: 'border-fuchsia-200' },
   event: { label: '予定 / 出来事', icon: CalendarDays, color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-200' },
   note: { label: 'メモ / 考察', icon: BookOpen, color: 'text-slate-600', bg: 'bg-slate-100', border: 'border-slate-300' },
   health: { label: '健康 / 体調', icon: Activity, color: 'text-teal-600', bg: 'bg-teal-50', border: 'border-teal-200' },
   finance: { label: '会計 / 財務', icon: Coins, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' },
   relationship: { label: '人間関係', icon: Heart, color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-200' },
-  faith: { label: '信仰 / 精神', icon: Smile, color: 'text-violet-600', bg: 'bg-violet-50', border: 'border-violet-200' },
+  faith: { label: '価値観、精神、信仰', icon: Sparkles, color: 'text-violet-600', bg: 'bg-violet-50', border: 'border-violet-200' },
   other: { label: 'その他', icon: Info, color: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200' }
 };
 

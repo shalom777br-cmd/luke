@@ -1,6 +1,5 @@
 export type MemoryCategory =
   | 'task'
-  | 'value'
   | 'event'
   | 'note'
   | 'health'

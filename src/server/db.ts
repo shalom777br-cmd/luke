@@ -163,9 +163,9 @@ export class MemoryGatewayDb {
   // Insert a new memory entry
   async insertEntry(entry: MemoryEntry): Promise<void> {
     const tableExists = await this.ensureTableExists();
-    // Rule: Save to Supabase if category is 'value' OR (category is NOT 'task' AND importance >= 4)
+    // Rule: Save to Supabase if category is 'faith' OR (category is NOT 'task' AND importance >= 4)
     const isBrainLibraryItem =
-      entry.category === 'value' ||
+      entry.category === 'faith' ||
       (entry.category !== 'task' && entry.importance >= 4);
 
     if (this.mode === 'supabase' && this.supabase && tableExists && isBrainLibraryItem) {
