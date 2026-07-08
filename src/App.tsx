@@ -1691,103 +1691,6 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
               )}
             </AnimatePresence>
 
-            {/* Timothy's Calendar Panel */}
-            <div className="bg-white rounded-2xl border border-indigo-200 p-6 shadow-xs space-y-4 relative overflow-hidden">
-              <div className="absolute top-0 right-0 h-16 w-16 bg-indigo-500/5 rounded-full blur-xl pointer-events-none" />
-              <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-                <Calendar className="h-4.5 w-4.5 text-indigo-600 animate-pulse" />
-                <h3 className="text-sm font-bold text-slate-900">テモテのカレンダー (Timothy's Calendar)</h3>
-                <span className="ml-auto bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-indigo-100">
-                  <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-ping" />
-                  <span>同期完了</span>
-                </span>
-              </div>
-
-              {/* Monthly Interactive Calendar */}
-              <TimothyCalendar entries={allCalendarEntries} />
-
-              {(() => {
-                // Find calendar entries (category is event or tags include "テモテのカレンダー")
-                const calendarEvents = allCalendarEntries.filter(
-                  (entry) =>
-                    entry.category === 'event' ||
-                    entry.tags.includes('テモテのカレンダー')
-                );
-
-                if (calendarEvents.length > 0) {
-                  // Sort chronologically by occurred_at or created_at
-                  const sortedEvents = [...calendarEvents].sort((a, b) => {
-                    const timeA = a.occurred_at ? new Date(a.occurred_at).getTime() : new Date(a.created_at).getTime();
-                    const timeB = b.occurred_at ? new Date(b.occurred_at).getTime() : new Date(b.created_at).getTime();
-                    return timeA - timeB;
-                  });
-
-                  return (
-                    <div className="space-y-2.5 pt-2 border-t border-slate-100">
-                      <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                        <CalendarDays className="h-3.5 w-3.5 text-indigo-500" />
-                        <span>登録済みのカレンダー予定一覧 ({sortedEvents.length}件):</span>
-                      </h4>
-                      <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
-                        {sortedEvents.map((evt) => {
-                          const dateObj = evt.occurred_at ? new Date(evt.occurred_at) : new Date(evt.created_at);
-                          const isSpecial = evt.tags.includes('テモテのカレンダー');
-                          return (
-                            <div key={evt.id} className={`rounded-xl p-3 border space-y-2 text-xs transition-all ${
-                              isSpecial
-                                ? 'bg-indigo-50/50 border-indigo-100 ring-1 ring-indigo-500/5'
-                                : 'bg-slate-50/50 border-slate-200'
-                            }`}>
-                              <div className="flex items-center justify-between flex-wrap gap-1">
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded-sm font-bold uppercase tracking-wider flex items-center gap-1 ${
-                                  isSpecial
-                                    ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
-                                    : 'bg-slate-200 text-slate-700 border border-slate-300'
-                                }`}>
-                                  <CalendarDays className="h-2.5 w-2.5 text-indigo-600" />
-                                  テモテのカレンダー予定
-                                </span>
-                                <span className="text-[10px] text-indigo-600 font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-indigo-100">
-                                  {dateObj.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric', weekday: 'short' })} {dateObj.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                              </div>
-                              <h4 className="font-bold text-slate-800">{evt.summary}</h4>
-                              <p className="text-[11px] text-slate-600 leading-relaxed bg-white/60 p-2 rounded-lg border border-slate-100/50">
-                                {evt.raw_input}
-                              </p>
-                              <div className="flex flex-wrap gap-1">
-                                {evt.tags.map((tag, idx) => (
-                                  <span key={idx} className="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded-md border border-slate-200/50">
-                                    #{tag}
-                                  </span>
-                                ))}
-                              </div>
-                              <div className="bg-white rounded-lg p-2.5 border border-indigo-100/60 shadow-3xs text-[10.5px] text-slate-600 italic leading-relaxed">
-                                <strong>テモテより:</strong> 「このご予定は私の方でもばっちり把握いたしました。前日や開始時刻前に必要書類の手配や通知アラート、時差の確認（ブラジル時間等）など、万全の体制でサポートいたしますので、ご安心ください！」
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                } else {
-                  return (
-                    <div className="text-center py-6 text-slate-400 bg-slate-50/50 rounded-xl border border-dashed border-slate-200 text-xs space-y-2">
-                      <CalendarDays className="h-6 w-6 text-slate-300 mx-auto" />
-                      <div>
-                        <p className="font-semibold text-slate-500">直近の予定はありません</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">テモテのカレンダーは現在空いています。</p>
-                      </div>
-                      <div className="bg-white/80 p-2.5 rounded-lg border border-slate-100 text-left max-w-xs mx-auto text-[11px] text-slate-500 italic leading-normal">
-                        <strong>テモテ:</strong> 「予定の登録は、『7月21日朝にブラジル担当者とのオンライン会議予定』のように話しかけるだけです。自動的にカレンダーとして整理し、大切な予定を絶対に見逃しません！」
-                      </div>
-                    </div>
-                  );
-                }
-              })()}
-            </div>
-
             {/* Timothy Task Queue Panel */}
             <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
               <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
@@ -1886,8 +1789,102 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
           {/* Right Column (7 cols) */}
           <section className="lg:col-span-7 space-y-6">
 
-             {/* Memory Trend Analytics */}
-            <MemoryTrendChart entries={filteredEntries} />
+            {/* Timothy's Calendar Panel */}
+            <div className="bg-white rounded-2xl border border-indigo-200 p-6 shadow-xs space-y-4 relative overflow-hidden">
+              <div className="absolute top-0 right-0 h-16 w-16 bg-indigo-500/5 rounded-full blur-xl pointer-events-none" />
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                <Calendar className="h-4.5 w-4.5 text-indigo-600 animate-pulse" />
+                <h3 className="text-sm font-bold text-slate-900">テモテのカレンダー (Timothy's Calendar)</h3>
+                <span className="ml-auto bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-indigo-100">
+                  <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-ping" />
+                  <span>同期完了</span>
+                </span>
+              </div>
+
+              {/* Monthly Interactive Calendar */}
+              <TimothyCalendar entries={allCalendarEntries} />
+
+              {(() => {
+                // Find calendar entries (category is event or tags include "テモテのカレンダー")
+                const calendarEvents = allCalendarEntries.filter(
+                  (entry) =>
+                    entry.category === 'event' ||
+                    entry.tags.includes('テモテのカレンダー')
+                );
+
+                if (calendarEvents.length > 0) {
+                  // Sort chronologically by occurred_at or created_at
+                  const sortedEvents = [...calendarEvents].sort((a, b) => {
+                    const timeA = a.occurred_at ? new Date(a.occurred_at).getTime() : new Date(a.created_at).getTime();
+                    const timeB = b.occurred_at ? new Date(b.occurred_at).getTime() : new Date(b.created_at).getTime();
+                    return timeA - timeB;
+                  });
+
+                  return (
+                    <div className="space-y-2.5 pt-2 border-t border-slate-100">
+                      <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                        <CalendarDays className="h-3.5 w-3.5 text-indigo-500" />
+                        <span>登録済みのカレンダー予定一覧 ({sortedEvents.length}件):</span>
+                      </h4>
+                      <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                        {sortedEvents.map((evt) => {
+                          const dateObj = evt.occurred_at ? new Date(evt.occurred_at) : new Date(evt.created_at);
+                          const isSpecial = evt.tags.includes('テモテのカレンダー');
+                          return (
+                            <div key={evt.id} className={`rounded-xl p-3 border space-y-2 text-xs transition-all ${
+                              isSpecial
+                                ? 'bg-indigo-50/50 border-indigo-100 ring-1 ring-indigo-500/5'
+                                : 'bg-slate-50/50 border-slate-200'
+                            }`}>
+                              <div className="flex items-center justify-between flex-wrap gap-1">
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-sm font-bold uppercase tracking-wider flex items-center gap-1 ${
+                                  isSpecial
+                                    ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                                    : 'bg-slate-200 text-slate-700 border border-slate-300'
+                                }`}>
+                                  <CalendarDays className="h-2.5 w-2.5 text-indigo-600" />
+                                  テモテのカレンダー予定
+                                </span>
+                                <span className="text-[10px] text-indigo-600 font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-indigo-100">
+                                  {dateObj.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric', weekday: 'short' })} {dateObj.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                              <h4 className="font-bold text-slate-800">{evt.summary}</h4>
+                              <p className="text-[11px] text-slate-600 leading-relaxed bg-white/60 p-2 rounded-lg border border-slate-100/50">
+                                {evt.raw_input}
+                              </p>
+                              <div className="flex flex-wrap gap-1">
+                                {evt.tags.map((tag, idx) => (
+                                  <span key={idx} className="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded-md border border-slate-200/50">
+                                    #{tag}
+                                  </span>
+                                ))}
+                              </div>
+                              <div className="bg-white rounded-lg p-2.5 border border-indigo-100/60 shadow-3xs text-[10.5px] text-slate-600 italic leading-relaxed">
+                                <strong>テモテより:</strong> 「このご予定は私の方でもばっちり把握いたしました。前日や開始時刻前に必要書類の手配や通知アラート、時差の確認（ブラジル時間等）など、万全の体制でサポートいたしますので、ご安心ください！」
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div className="text-center py-6 text-slate-400 bg-slate-50/50 rounded-xl border border-dashed border-slate-200 text-xs space-y-2">
+                      <CalendarDays className="h-6 w-6 text-slate-300 mx-auto" />
+                      <div>
+                        <p className="font-semibold text-slate-500">直近の予定はありません</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">テモテのカレンダーは現在空いています。</p>
+                      </div>
+                      <div className="bg-white/80 p-2.5 rounded-lg border border-slate-100 text-left max-w-xs mx-auto text-[11px] text-slate-500 italic leading-normal">
+                        <strong>テモテ:</strong> 「予定の登録は、『7月21日朝にブラジル担当者とのオンライン会議予定』のように話しかけるだけです。自動的にカレンダーとして整理し、大切な予定を絶対に見逃しません！」
+                      </div>
+                    </div>
+                  );
+                }
+              })()}
+            </div>
 
             {/* Ingested Stream Results list */}
             <div className="space-y-4">
@@ -2448,6 +2445,9 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
                 </div>
               )}
             </div>
+
+            {/* Memory Trend Analytics */}
+            <MemoryTrendChart entries={filteredEntries} />
 
           </section>
 
