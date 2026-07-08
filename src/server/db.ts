@@ -12,6 +12,7 @@ const isSupabaseConfigured = !!(supabaseUrl && supabaseKey);
 const tmpBase = process.platform === 'win32' ? os.tmpdir() : '/tmp';
 const DATA_DIR = path.join(tmpBase, 'memory_app_data');
 const LOCAL_DB_PATH = path.join(DATA_DIR, 'memory_entries.json');
+const LOCAL_PUBLIC_DB_PATH = path.join(DATA_DIR, 'public_memories.json');
 
 // Ensure data directory exists ONLY if Supabase is not configured
 if (!isSupabaseConfigured) {
@@ -25,6 +26,91 @@ if (!isSupabaseConfigured) {
     }
   } catch (err) {
     console.error('Failed to initialize local filesystem database in /tmp:', err);
+  }
+}
+
+// Default local public memories
+const DEFAULT_PUBLIC_MEMORIES = [
+  {
+    id: 'pub-1',
+    title: '全国規模の合同防災・避難計画 2026',
+    content: '2026年9月1日10:00より、全国自治体合同の大規模防災訓練および避難経路の確認プロセスが実施されます。各自、防災バッグの中身のチェック and 避難場所の再確認を行ってください。',
+    category: 'event',
+    tags: ['防災', '避難訓練', '安全'],
+    occurred_at: '2026-09-01T10:00:00.000Z',
+    created_at: '2026-07-01T00:00:00.000Z',
+    author_name: '日本防災協会',
+    importance: 4
+  },
+  {
+    id: 'pub-2',
+    title: '2026年度版花粉症・アレルギー対策ガイド',
+    content: '最新の免疫療法および市販医薬品のトレンドに関する要約。今年はスギ花粉の飛散量が前年比130%と予測されており、早めの抗ヒスタミン薬処方が推奨されています。',
+    category: 'health',
+    tags: ['花粉症', 'アレルギー', '健康'],
+    occurred_at: '2026-03-15T09:00:00.000Z',
+    created_at: '2026-03-01T00:00:00.000Z',
+    author_name: 'ルカ健康推進委員会',
+    importance: 5
+  },
+  {
+    id: 'pub-3',
+    title: '生成AIプロンプトエンジニアリング基礎知識',
+    content: 'GeminiやClaude等で望む出力を得るための役割付与(Persona)・Few-Shot学習プロンプトの解説。回答に一貫性を持たせるため、JSONスキーマを明示してシステムプロンプトに組み込む手法が有効です。',
+    category: 'note',
+    tags: ['AI', 'プロンプト', '技術'],
+    occurred_at: '2026-07-01T12:00:00.000Z',
+    created_at: '2026-07-01T12:00:00.000Z',
+    author_name: 'AI開発チーム',
+    importance: 3
+  },
+  {
+    id: 'pub-4',
+    title: '新NISA成長投資枠と積立分散投資の最適配分',
+    content: '長期資産形成を目的としたアセットアロケーション例。全世界株式インデックス（オルカン）と米国株（S&P500）の組み合わせにおいて、信託報酬や分配方針の比較を行い複利効果を最大化する方法。',
+    category: 'finance',
+    tags: ['投資', 'NISA', '資産運用'],
+    occurred_at: '2026-05-10T15:30:00.000Z',
+    created_at: '2026-05-10T15:30:00.000Z',
+    author_name: 'ファイナンシャルラボ',
+    importance: 3
+  },
+  {
+    id: 'pub-5',
+    title: '良好な人間関係を維持するためのアクティブリスニング術',
+    content: '相手の言葉を遮らずに傾聴し、感情に共感を示す「バックトラッキング（おうむ返し）」の具体例。カウンセリングや家族間の対話、ビジネスにおける信頼関係（ラポール）構築に欠かせない対話法です。',
+    category: 'relationship',
+    tags: ['コミュニケーション', '心理学', '人間関係'],
+    occurred_at: '2026-06-20T18:00:00.000Z',
+    created_at: '2026-06-20T18:00:00.000Z',
+    author_name: '共感対話サークル',
+    importance: 3
+  }
+];
+
+function readLocalPublicDb(): any[] {
+  try {
+    if (!fs.existsSync(LOCAL_PUBLIC_DB_PATH)) {
+      fs.writeFileSync(LOCAL_PUBLIC_DB_PATH, JSON.stringify(DEFAULT_PUBLIC_MEMORIES, null, 2), 'utf-8');
+      return DEFAULT_PUBLIC_MEMORIES;
+    }
+    const raw = fs.readFileSync(LOCAL_PUBLIC_DB_PATH, 'utf-8');
+    return JSON.parse(raw);
+  } catch (error) {
+    console.error('Failed to read local public DB', error);
+    return DEFAULT_PUBLIC_MEMORIES;
+  }
+}
+
+function writeLocalPublicDb(entries: any[]): void {
+  try {
+    const dir = path.dirname(LOCAL_PUBLIC_DB_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(LOCAL_PUBLIC_DB_PATH, JSON.stringify(entries, null, 2), 'utf-8');
+  } catch (error) {
+    console.error('Failed to write local public DB', error);
   }
 }
 
@@ -465,58 +551,7 @@ export class MemoryGatewayDb {
 
   // Query public memories in Supabase with local fallback
   async queryPublicMemories(queryText?: string, category?: string): Promise<any[]> {
-    const localPublicDb = [
-      {
-        id: 'pub-1',
-        title: '全国規模の合同防災・避難計画 2026',
-        content: '2026年9月1日10:00より、全国自治体合同の大規模防災訓練および避難経路の確認プロセスが実施されます。各自、防災バッグの中身のチェックと避難場所の再確認を行ってください。',
-        category: 'event',
-        tags: ['防災', '避難訓練', '安全'],
-        occurred_at: '2026-09-01T10:00:00.000Z',
-        created_at: '2026-07-01T00:00:00.000Z',
-        author_name: '日本防災協会'
-      },
-      {
-        id: 'pub-2',
-        title: '2026年度版花粉症・アレルギー対策ガイド',
-        content: '最新の免疫療法および市販医薬品のトレンドに関する要約。今年はスギ花粉の飛散量が前年比130%と予測されており、早めの抗ヒスタミン薬処方が推奨されています。',
-        category: 'health',
-        tags: ['花粉症', 'アレルギー', '健康'],
-        occurred_at: '2026-03-15T09:00:00.000Z',
-        created_at: '2026-03-01T00:00:00.000Z',
-        author_name: 'ルカ健康推進委員会'
-      },
-      {
-        id: 'pub-3',
-        title: '生成AIプロンプトエンジニアリング基礎知識',
-        content: 'GeminiやClaude等で望む出力を得るための役割付与(Persona)・Few-Shot学習プロンプトの解説。回答に一貫性を持たせるため、JSONスキーマを明示してシステムプロンプトに組み込む手法が有効です。',
-        category: 'note',
-        tags: ['AI', 'プロンプト', '技術'],
-        occurred_at: '2026-07-01T12:00:00.000Z',
-        created_at: '2026-07-01T12:00:00.000Z',
-        author_name: 'AI開発チーム'
-      },
-      {
-        id: 'pub-4',
-        title: '新NISA成長投資枠と積立分散投資の最適配分',
-        content: '長期資産形成を目的としたアセットアロケーション例。全世界株式インデックス（オルカン）と米国株（S&P500）の組み合わせにおいて、信託報酬や分配方針の比較を行い複利効果を最大化する方法。',
-        category: 'finance',
-        tags: ['投資', 'NISA', '資産運用'],
-        occurred_at: '2026-05-10T15:30:00.000Z',
-        created_at: '2026-05-10T15:30:00.000Z',
-        author_name: 'ファイナンシャルラボ'
-      },
-      {
-        id: 'pub-5',
-        title: '良好な人間関係を維持するためのアクティブリスニング術',
-        content: '相手の言葉を遮らずに傾聴し、感情に共感を示す「バックトラッキング（おうむ返し）」の具体例。カウンセリングや家族間の対話、ビジネスにおける信頼関係（ラポール）構築に欠かせない対話法です。',
-        category: 'relationship',
-        tags: ['コミュニケーション', '心理学', '人間関係'],
-        occurred_at: '2026-06-20T18:00:00.000Z',
-        created_at: '2026-06-20T18:00:00.000Z',
-        author_name: '共感対話サークル'
-      }
-    ];
+    const localPublicDb = readLocalPublicDb();
 
     const publicTableExists = await this.ensurePublicTableExists();
     if (this.mode === 'supabase' && this.supabase && publicTableExists) {
@@ -582,9 +617,9 @@ export class MemoryGatewayDb {
     }
     try {
       const { error } = await this.supabase
-        .from('memories')
-        .select('id, occurred_at')
-        .limit(1);
+          .from('memories')
+          .select('id, occurred_at')
+          .limit(1);
 
       if (!error) {
         this.publicTableMissing = false;
@@ -606,9 +641,9 @@ export class MemoryGatewayDb {
 
       // Try selecting without occurred_at
       const { error: existError } = await this.supabase
-        .from('memories')
-        .select('id')
-        .limit(1);
+          .from('memories')
+          .select('id')
+          .limit(1);
 
       if (existError) {
         if (existError.code === '42P01' || existError.message?.includes('relation') || existError.message?.includes('does not exist') || existError.message?.includes('cache')) {
@@ -643,7 +678,7 @@ export class MemoryGatewayDb {
   }
 
   // Publish memory to public database
-  async publishMemoryEntry(entry: { title: string; content: string; category: string; tags: string[]; occurred_at: string; author_name?: string }): Promise<boolean> {
+  async publishMemoryEntry(entry: { title: string; content: string; category: string; tags: string[]; occurred_at: string; author_name?: string; importance?: number }): Promise<boolean> {
     const publicTableExists = await this.ensurePublicTableExists();
     if (this.mode === 'supabase' && this.supabase && publicTableExists) {
       try {
@@ -654,7 +689,8 @@ export class MemoryGatewayDb {
           category: entry.category,
           tags: entry.tags,
           created_at: new Date().toISOString(),
-          author_name: entry.author_name || 'Anonymous'
+          author_name: entry.author_name || 'Anonymous',
+          importance: entry.importance || 3
         };
 
         if (!this.publicOccurredAtMissing) {
@@ -686,7 +722,53 @@ export class MemoryGatewayDb {
         console.error('publishMemoryEntry error:', err);
         return false;
       }
+    } else {
+      // Local fallback publishing
+      const list = readLocalPublicDb();
+      list.push({
+        id: 'pub-' + Math.random().toString(36).substring(2, 11),
+        title: entry.title,
+        content: entry.content,
+        category: entry.category,
+        tags: entry.tags,
+        occurred_at: entry.occurred_at,
+        created_at: new Date().toISOString(),
+        author_name: entry.author_name || '匿名のルカユーザー',
+        importance: entry.importance || 3
+      });
+      writeLocalPublicDb(list);
+      return true;
     }
-    return true;
+  }
+
+  // Update public memory (category/importance)
+  async updatePublicMemory(id: string, fields: { category?: string; importance?: number }): Promise<boolean> {
+    const publicTableExists = await this.ensurePublicTableExists();
+    if (this.mode === 'supabase' && this.supabase && publicTableExists) {
+      try {
+        const { error } = await this.supabase
+          .from('memories')
+          .update(fields)
+          .eq('id', id);
+        if (error) {
+          console.error('Failed to update public memory in Supabase:', error.message);
+          return false;
+        }
+        return true;
+      } catch (err) {
+        console.error('updatePublicMemory error:', err);
+        return false;
+      }
+    } else {
+      const list = readLocalPublicDb();
+      const updated = list.map(item => {
+        if (item.id === id) {
+          return { ...item, ...fields };
+        }
+        return item;
+      });
+      writeLocalPublicDb(updated);
+      return true;
+    }
   }
 }

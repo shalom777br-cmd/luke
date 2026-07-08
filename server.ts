@@ -399,6 +399,22 @@ app.post('/api/public-memories/publish', async (req, res) => {
   }
 });
 
+// API Route: Update public memory (category/importance)
+app.post('/api/public-memories/update', async (req, res) => {
+  const { id, category, importance } = req.body;
+  if (!id) {
+    res.status(400).json({ error: 'Missing required parameter: id' });
+    return;
+  }
+  try {
+    const success = await db.updatePublicMemory(id, { category, importance: Number(importance) });
+    res.json({ success });
+  } catch (err) {
+    console.error('Failed to update public memory:', err);
+    res.status(500).json({ error: 'Failed to update public memory' });
+  }
+});
+
 // API Route: GitHub repository analysis & Timothy Dev Tasks
 app.get('/api/github/repo-status', async (req, res) => {
   try {

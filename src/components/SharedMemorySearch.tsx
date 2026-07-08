@@ -130,6 +130,90 @@ export const SharedMemorySearch: React.FC<SharedMemorySearchProps> = ({
   handleImportPublicMemory,
   showToast
 }) => {
+  const [evaluatingId, setEvaluatingId] = React.useState<string | null>(null);
+  const [auditResults, setAuditResults] = React.useState<Record<string, { suggested_category: string; suggested_importance: number; reason: string }>>({});
+  const [isUpdatingPublicId, setIsUpdatingPublicId] = React.useState<string | null>(null);
+
+  const handleReEvaluatePublic = async (pubId: string, content: string, currentCategory: string, currentImportance: number) => {
+    setEvaluatingId(pubId);
+    try {
+      const res = await fetch('/api/re-evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content,
+          current_category: currentCategory,
+          current_importance: currentImportance
+        })
+      });
+      if (!res.ok) throw new Error('Re-evaluation request failed');
+      const data = await res.json();
+      if (data.success) {
+        setAuditResults(prev => ({
+          ...prev,
+          [pubId]: {
+            suggested_category: data.suggested_category,
+            suggested_importance: Number(data.suggested_importance),
+            reason: data.reason
+          }
+        }));
+        showToast('success', 'AIによる再評価が完了しました！内容を確認し、承認してください。');
+      } else {
+        throw new Error('AI failed to re-evaluate');
+      }
+    } catch (err) {
+      console.error('Public memory re-evaluation failed:', err);
+      showToast('error', 'AI再評価中にエラーが発生しました。');
+    } finally {
+      setEvaluatingId(null);
+    }
+  };
+
+  const handleApprovePublicUpdate = async (pubId: string) => {
+    const audit = auditResults[pubId];
+    if (!audit) return;
+    setIsUpdatingPublicId(pubId);
+    try {
+      const res = await fetch('/api/public-memories/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: pubId,
+          category: audit.suggested_category,
+          importance: audit.suggested_importance
+        })
+      });
+      if (!res.ok) throw new Error('Update request failed');
+      const data = await res.json();
+      if (data.success) {
+        showToast('success', '重要度とカテゴリを承認し、更新しました！');
+        // Clear this audit result
+        setAuditResults(prev => {
+          const next = { ...prev };
+          delete next[pubId];
+          return next;
+        });
+        // Trigger a fresh public memory search
+        handleSearchPublic();
+      } else {
+        throw new Error('Server returned failure');
+      }
+    } catch (err) {
+      console.error('Failed to approve public memory update:', err);
+      showToast('error', '承認更新中にエラーが発生しました。');
+    } finally {
+      setIsUpdatingPublicId(null);
+    }
+  };
+
+  const handleDismissPublicUpdate = (pubId: string) => {
+    setAuditResults(prev => {
+      const next = { ...prev };
+      delete next[pubId];
+      return next;
+    });
+  };
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-5">
       
@@ -649,30 +733,86 @@ CREATE POLICY "Allow public insert" ON memories FOR INSERT WITH CHECK (true);`;
                       key={pub.id}
                       className="bg-slate-50/50 hover:bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-2 transition-all relative group"
                     >
-                      <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start justify-between gap-2 flex-wrap sm:flex-nowrap">
                         <div className="space-y-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
                             <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold ${catDetails.bg} ${catDetails.color} border ${catDetails.border}`}>
                               <CatIcon className="h-3 w-3" />
                               {catDetails.label}
                             </span>
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                              <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-500 shrink-0" />
+                              <span>重要度 ★{pub.importance || 3}</span>
+                            </span>
                             <h4 className="text-xs font-bold text-slate-800 line-clamp-1">{pub.title}</h4>
                           </div>
-                          {pub.author_name && (
-                            <span className="text-[10px] text-slate-400 block font-medium">
-                              公開元: <span className="text-slate-600 font-semibold">{pub.author_name}</span>
-                            </span>
-                          )}
+                          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[10px] text-slate-400 font-medium pt-0.5">
+                            {pub.author_name && (
+                              <span>
+                                公開元: <span className="text-slate-600 font-semibold">{pub.author_name}</span>
+                              </span>
+                            )}
+                            {pub.occurred_at && (
+                              <span className="flex items-center gap-1">
+                                <Calendar className="h-3 w-3 text-slate-400 shrink-0" />
+                                <span>
+                                  対象日: <span className="text-slate-600 font-semibold">
+                                    {new Date(pub.occurred_at).toLocaleString('ja-JP', {
+                                      year: 'numeric',
+                                      month: '2-digit',
+                                      day: '2-digit',
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    })}
+                                  </span>
+                                </span>
+                              </span>
+                            )}
+                            {pub.created_at && (
+                              <span className="flex items-center gap-1">
+                                <span>作成日:</span>
+                                <span className="text-slate-500">
+                                  {new Date(pub.created_at).toLocaleDateString('ja-JP', {
+                                    year: 'numeric',
+                                    month: '2-digit',
+                                    day: '2-digit'
+                                  })}
+                                </span>
+                              </span>
+                            )}
+                          </div>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => handleImportPublicMemory(pub)}
-                          className="px-2 py-1 bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-indigo-600 text-[10px] font-bold rounded-lg transition-all flex items-center gap-1 shadow-xs cursor-pointer"
-                        >
-                          <Plus className="h-3 w-3" />
-                          <span>マイ記憶へ追加</span>
-                        </button>
+                        <div className="flex items-center gap-1.5 shrink-0 flex-wrap sm:flex-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => handleReEvaluatePublic(pub.id, pub.content, pub.category, pub.importance || 3)}
+                            disabled={evaluatingId === pub.id || isUpdatingPublicId === pub.id}
+                            className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-60 text-indigo-700 text-[10px] font-bold rounded-lg transition-all flex items-center gap-1 cursor-pointer border border-indigo-100/60"
+                            title="AIに重要度とカテゴリを再評価させる"
+                          >
+                            {evaluatingId === pub.id ? (
+                              <>
+                                <RefreshCw className="h-3 w-3 animate-spin" />
+                                <span>再評価中...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="h-3 w-3 text-indigo-500 animate-pulse" />
+                                <span>AI再評価</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleImportPublicMemory(pub)}
+                            className="px-2 py-1 bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-indigo-600 text-[10px] font-bold rounded-lg transition-all flex items-center gap-1 shadow-xs cursor-pointer"
+                          >
+                            <Plus className="h-3 w-3" />
+                            <span>マイ記憶へ追加</span>
+                          </button>
+                        </div>
                       </div>
 
                       <p className="text-xs text-slate-600 leading-relaxed font-medium bg-white/60 p-2 rounded-lg border border-slate-100/60 whitespace-pre-wrap">{pub.content}</p>
@@ -684,6 +824,56 @@ CREATE POLICY "Allow public insert" ON memories FOR INSERT WITH CHECK (true);`;
                               #{tag}
                             </span>
                           ))}
+                        </div>
+                      )}
+
+                      {auditResults[pub.id] && (
+                        <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-3 space-y-2 text-xs mt-2 animate-fadeIn">
+                          <div className="flex items-center gap-1 text-amber-800 font-bold text-[10px] uppercase tracking-wider">
+                            <Sparkles className="h-3.5 w-3.5 text-amber-600" />
+                            <span>AIによる再評価提案</span>
+                          </div>
+                          <div className="text-[11px] text-slate-700 leading-relaxed font-medium space-y-1 bg-white/75 p-2.5 rounded-lg border border-amber-100">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span>カテゴリ:</span>
+                              <span className="font-bold text-slate-400 line-through">
+                                {CATEGORY_DETAILS[pub.category as MemoryCategory]?.label || pub.category}
+                              </span>
+                              <span className="text-emerald-700 font-bold">
+                                → {CATEGORY_DETAILS[auditResults[pub.id].suggested_category as MemoryCategory]?.label || auditResults[pub.id].suggested_category}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                              <span>重要度:</span>
+                              <span className="font-bold text-slate-400 line-through">★{pub.importance || 3}</span>
+                              <span className="text-emerald-700 font-bold">→ ★{auditResults[pub.id].suggested_importance}</span>
+                            </div>
+                            <p className="text-[11px] text-slate-600 mt-1.5 italic">
+                              <strong>提案理由:</strong> 「{auditResults[pub.id].reason}」
+                            </p>
+                          </div>
+                          <div className="flex items-center justify-end gap-2 pt-0.5">
+                            <button
+                              type="button"
+                              onClick={() => handleDismissPublicUpdate(pub.id)}
+                              className="px-2.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-[10px] rounded-lg cursor-pointer"
+                            >
+                              却下
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleApprovePublicUpdate(pub.id)}
+                              disabled={isUpdatingPublicId === pub.id}
+                              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] rounded-lg transition-all flex items-center gap-1 shadow-xs cursor-pointer"
+                            >
+                              {isUpdatingPublicId === pub.id ? (
+                                <RefreshCw className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Check className="h-3 w-3" />
+                              )}
+                              <span>承認して更新する</span>
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
