@@ -46,10 +46,20 @@ interface ApiResponse {
 }
 
 interface GitHubRepoTasksProps {
-  onAcceptDevTask: (taskName: string, explanation: string) => void;
+  onAcceptDevTask: (taskName: string, explanation: string, filePath?: string, repoName?: string) => void;
+  username?: string;
+  repoName?: string;
+  repos?: any[];
+  onSelectRepo?: (repoName: string | null) => void;
 }
 
-export const GitHubRepoTasks: React.FC<GitHubRepoTasksProps> = ({ onAcceptDevTask }) => {
+export const GitHubRepoTasks: React.FC<GitHubRepoTasksProps> = ({ 
+  onAcceptDevTask,
+  username,
+  repoName,
+  repos,
+  onSelectRepo
+}) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [repoData, setRepoData] = useState<ApiResponse | null>(null);
@@ -60,7 +70,14 @@ export const GitHubRepoTasks: React.FC<GitHubRepoTasksProps> = ({ onAcceptDevTas
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/github/repo-status');
+      const url = username && repoName
+        ? `/api/github/repo-status?username=${encodeURIComponent(username)}&repo=${encodeURIComponent(repoName)}`
+        : '/api/github/repo-status';
+      const res = await fetch(url, {
+        headers: {
+          'X-Security-Token': (import.meta as any).env?.VITE_TIMOTHY_SECURITY_TOKEN || ''
+        }
+      });
       if (!res.ok) {
         throw new Error('サーバーからのリポジトリ解析データの取得に失敗しました。');
       }
@@ -80,7 +97,7 @@ export const GitHubRepoTasks: React.FC<GitHubRepoTasksProps> = ({ onAcceptDevTas
 
   useEffect(() => {
     fetchRepoState();
-  }, []);
+  }, [username, repoName]);
 
   // Calculate dynamic recommendations based on completion rate, importance, and relevance
   const recommendations = useMemo(() => {
@@ -89,7 +106,13 @@ export const GitHubRepoTasks: React.FC<GitHubRepoTasksProps> = ({ onAcceptDevTas
     // Calculate priority scores: high importance, high relevance, lower completion rate = higher priority
     const scored = repoData.modules.map((mod) => {
       // Score formula: (importance * 3.5) + (relevance * 3.0) + ((100 - completion) * 0.2)
-      const score = (mod.baseImportance * 3.5) + (mod.baseRelevance * 3.0) + ((100 - mod.completionRate) * 0.2);
+      let score = (mod.baseImportance * 3.5) + (mod.baseRelevance * 3.0) + ((100 - mod.completionRate) * 0.2);
+      
+      // 'src' フォルダまたは 'Source Code' カテゴリの src フォルダを最優先するためにブーストする
+      if (mod.filePath === 'src' || mod.name.includes('src') || mod.name.includes('フォルダ「src」')) {
+        score += 1000;
+      }
+
       return {
         module: mod,
         score,
@@ -109,7 +132,7 @@ export const GitHubRepoTasks: React.FC<GitHubRepoTasksProps> = ({ onAcceptDevTas
   // Handle trigger proposal
   const triggerDevTask = (mod: RepoModule) => {
     const explanation = `テモテ推奨アクション: ${mod.defaultSuggested} (対象ファイル: ${mod.filePath} | 現在の完成率: ${mod.completionRate}% | 重要度★${mod.baseImportance})`;
-    onAcceptDevTask(mod.name + ' の実装補強', explanation);
+    onAcceptDevTask(mod.name + ' の実装補強', explanation, mod.filePath, repoName || 'Local Project');
   };
 
   if (loading) {
@@ -144,6 +167,25 @@ export const GitHubRepoTasks: React.FC<GitHubRepoTasksProps> = ({ onAcceptDevTas
 
   return (
     <div id="github-repo-tasks-panel" className="space-y-4">
+      
+      {/* Target Selector Dropdown */}
+      {repos && repos.length > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+          <span className="font-bold text-slate-700">分析対象のリポジトリを選択:</span>
+          <select
+            value={repoName || ''}
+            onChange={(e) => onSelectRepo?.(e.target.value || null)}
+            className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          >
+            <option value="">📁 ローカルプロジェクト環境 (本アプリ)</option>
+            {repos.map((r) => (
+              <option key={r.id || r.name} value={r.name}>
+                🐙 {r.name} ({r.language || 'その他'})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       
       {/* Repo Health & Info Summary Card */}
       <div className="bg-slate-900 text-slate-100 rounded-2xl p-4.5 shadow-md border border-slate-800 space-y-3 relative overflow-hidden">

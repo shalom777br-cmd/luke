@@ -14,21 +14,6 @@ const DATA_DIR = path.join(tmpBase, 'memory_app_data');
 const LOCAL_DB_PATH = path.join(DATA_DIR, 'memory_entries.json');
 const LOCAL_PUBLIC_DB_PATH = path.join(DATA_DIR, 'public_memories.json');
 
-// Ensure data directory exists ONLY if Supabase is not configured
-if (!isSupabaseConfigured) {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    // Ensure database file exists
-    if (!fs.existsSync(LOCAL_DB_PATH)) {
-      fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify([], null, 2), 'utf-8');
-    }
-  } catch (err) {
-    console.error('Failed to initialize local filesystem database in /tmp:', err);
-  }
-}
-
 // Default local public memories
 const DEFAULT_PUBLIC_MEMORIES = [
   {
@@ -88,9 +73,30 @@ const DEFAULT_PUBLIC_MEMORIES = [
   }
 ];
 
+// Ensure data directory and local DB file always exist on startup as fallback
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+  // Ensure local database file exists
+  if (!fs.existsSync(LOCAL_DB_PATH)) {
+    fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify([], null, 2), 'utf-8');
+  }
+  // Ensure local public database file exists
+  if (!fs.existsSync(LOCAL_PUBLIC_DB_PATH)) {
+    fs.writeFileSync(LOCAL_PUBLIC_DB_PATH, JSON.stringify(DEFAULT_PUBLIC_MEMORIES, null, 2), 'utf-8');
+  }
+} catch (err) {
+  console.error('Failed to initialize local filesystem database in /tmp:', err);
+}
+
 function readLocalPublicDb(): any[] {
   try {
     if (!fs.existsSync(LOCAL_PUBLIC_DB_PATH)) {
+      const dir = path.dirname(LOCAL_PUBLIC_DB_PATH);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
       fs.writeFileSync(LOCAL_PUBLIC_DB_PATH, JSON.stringify(DEFAULT_PUBLIC_MEMORIES, null, 2), 'utf-8');
       return DEFAULT_PUBLIC_MEMORIES;
     }

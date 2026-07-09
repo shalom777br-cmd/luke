@@ -211,4 +211,55 @@ Current Importance: ${currentImportance}`,
       };
     }
   }
+
+  async counselWithNoah(worryText: string, healthHistory: MemoryEntry[]): Promise<string> {
+    if (!this.apiKey) {
+      console.warn('Anthropic API key is missing.');
+      return `【ノア (AIカウンセラー) のメッセージ】
+Anthropic APIキーが未設定のため、デモ回答モードです。
+
+「こんにちは。カウンセラーのノアです。
+今はまだお話しする準備が完全に整っていないかもしれませんが、あなたの心細さやモヤモヤはしっかりと受け止めています。
+
+どうか一人で抱え込まず、深く息を吐いてみてくださいね。私はいつでも、あなたの味方としてここで待っていますからね。」`;
+    }
+
+    const historyContext = healthHistory.length > 0
+      ? healthHistory
+          .map((entry, idx) => `[過去の体調・お悩み記録 #${idx + 1}] 日時: ${entry.occurred_at || entry.created_at} 内容: ${entry.raw_input}`)
+          .join('\n\n')
+      : '過去の体調・お悩み関連の履歴はありません。';
+
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': this.apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-3-5-sonnet-20241022',
+          max_tokens: 1000,
+          system: 'You are Noah (ノア), an AI Counselor specializing in physical & psychological wellness. Act with deep empathy, active listening, and warmth. Respond in gentle Japanese with soft counseling-style endings ("ですね", "ですよ", "くださいね"). Use Markdown paragraphs.',
+          messages: [
+            {
+              role: 'user',
+              content: `User Current Worry: "${worryText}"\n\nShared Health Logs:\n${historyContext}\n\nPlease provide warm, compassionate counseling as counselor Noah.`,
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Anthropic API returned status ${response.status}`);
+      }
+
+      const data = await response.json() as any;
+      return data.content?.[0]?.text || '回答を作成できませんでした。';
+    } catch (err) {
+      console.error('Anthropic counseling formulation failed:', err);
+      return 'カウンセラー・ノアが少し考え込んでしまったようです。もう一度そっと声をかけてみてください。';
+    }
+  }
 }

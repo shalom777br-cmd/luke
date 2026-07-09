@@ -35,7 +35,10 @@ import {
   Star,
   Github,
   AlertCircle,
-  Pencil
+  Pencil,
+  Sliders,
+  Volume2,
+  Terminal
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -48,6 +51,7 @@ import { MemoryTrendChart } from './components/MemoryTrendChart';
 import { TimothyCalendar } from './components/TimothyCalendar';
 import { GitHubRepoTasks } from './components/GitHubRepoTasks';
 import { SharedMemorySearch } from './components/SharedMemorySearch';
+import { NoahCounseling } from './components/NoahCounseling';
 
 // Supported profiles to showcase the "shared" context capability
 const USER_PROFILES = [
@@ -66,6 +70,23 @@ const CATEGORY_DETAILS: Record<MemoryCategory, { label: string; icon: any; color
   relationship: { label: '人間関係', icon: Heart, color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-200' },
   faith: { label: '価値観、精神、信仰', icon: Sparkles, color: 'text-violet-600', bg: 'bg-violet-50', border: 'border-violet-200' },
   other: { label: 'その他', icon: Info, color: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200' }
+};
+
+const extractGitHubUsername = (input: string): string => {
+  let cleaned = input.trim();
+  if (cleaned.includes('github.com/')) {
+    const parts = cleaned.split('github.com/');
+    if (parts.length > 1) {
+      cleaned = parts[1];
+    }
+  }
+  cleaned = cleaned.split('?')[0];
+  cleaned = cleaned.split('#')[0];
+  const pathParts = cleaned.split('/').filter(Boolean);
+  if (pathParts.length > 0) {
+    return pathParts[0];
+  }
+  return cleaned;
 };
 
 export default function App() {
@@ -103,6 +124,40 @@ export default function App() {
     }
   });
   
+  // Task execution log state
+  const [activeLogTaskId, setActiveLogTaskId] = useState<string | null>(null);
+  const [activeLogData, setActiveLogData] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (!activeLogTaskId) {
+      setActiveLogData(null);
+      return;
+    }
+
+    const fetchLogs = async () => {
+      try {
+        const res = await fetch(`/api/github/task-logs?id=${activeLogTaskId}`, {
+          headers: {
+            'X-Security-Token': (import.meta as any).env?.VITE_TIMOTHY_SECURITY_TOKEN || ''
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            setActiveLogData(data.task);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch task execution logs:', err);
+      }
+    };
+
+    fetchLogs();
+    
+    const timer = setInterval(fetchLogs, 1500);
+    return () => clearInterval(timer);
+  }, [activeLogTaskId]);
+  
   // App system status
   const [systemStatus, setSystemStatus] = useState<{
     db_mode: string;
@@ -133,6 +188,30 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [recognition, setRecognition] = useState<any>(null);
   const [speechFeedback, setSpeechFeedback] = useState('');
+
+  // Microphone Sensitivity, Noise Gate Threshold and filters
+  const [micSensitivity, setMicSensitivity] = useState(1.0);
+  const [noiseThreshold, setNoiseThreshold] = useState(15);
+  const [enableNativeNoiseSuppression, setEnableNativeNoiseSuppression] = useState(true);
+  const [enableNativeEchoCancellation, setEnableNativeEchoCancellation] = useState(true);
+  const [realtimeVolume, setRealtimeVolume] = useState(0);
+  const [isGateOpen, setIsGateOpen] = useState(true);
+  const [showMicSettings, setShowMicSettings] = useState(false);
+
+  // Refs to allow instant access in Web Audio loop & SpeechRecognition callbacks without closures issue
+  const micSensitivityRef = useRef(1.0);
+  const noiseThresholdRef = useRef(15);
+  const isGateOpenRef = useRef(true);
+  const lastDetectedVoiceTimeRef = useRef(Date.now());
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    micSensitivityRef.current = micSensitivity;
+  }, [micSensitivity]);
+
+  useEffect(() => {
+    noiseThresholdRef.current = noiseThreshold;
+  }, [noiseThreshold]);
 
   // Search, filter & synthesis states
   const [selectedCategory, setSelectedCategory] = useState<MemoryCategory | 'all'>('all');
@@ -200,6 +279,14 @@ export default function App() {
   const [publicSearchCategory, setPublicSearchCategory] = useState<MemoryCategory | 'all'>('all');
   const [isPublicTableMissing, setIsPublicTableMissing] = useState(false);
   const [isPublicColumnMissing, setIsPublicColumnMissing] = useState(false);
+
+  // GitHub Integration states
+  const [gitHubUsername, setGitHubUsername] = useState('shalom777br-cmd');
+  const [isFetchingGitHub, setIsFetchingGitHub] = useState(false);
+  const [isSyncingGitHub, setIsSyncingGitHub] = useState(false);
+  const [githubRepos, setGithubRepos] = useState<any[]>([]);
+  const [selectedRepoForDashboard, setSelectedRepoForDashboard] = useState<string | null>(null);
+  const [githubError, setGithubError] = useState<string | null>(null);
 
   // Fields for publishing a new public memory
   const [showPublishForm, setShowPublishForm] = useState(false);
@@ -284,9 +371,18 @@ export default function App() {
 
   // Fetch entries and tags when user profile, filters, or lastCompiledEntry changes
   useEffect(() => {
+    const isUnfiltered = selectedCategory === 'all' && 
+                         selectedTags.length === 0 && 
+                         !dateFrom && 
+                         !dateTo && 
+                         !queryText.trim();
+
     handleSearch();
     fetchTags();
-    fetchCalendarEntries();
+    
+    if (!isUnfiltered) {
+      fetchCalendarEntries();
+    }
   }, [currentUser, selectedCategory, selectedTags, dateFrom, dateTo]);
 
   // Persist Timothy and alert states
@@ -368,9 +464,10 @@ export default function App() {
     showToast('info', 'タスク提案を却下しました。');
   };
 
-  const handleAcceptDevTask = (taskName: string, explanation: string) => {
+  const handleAcceptDevTask = async (taskName: string, explanation: string, filePath?: string, repoName?: string) => {
+    const taskId = 'dev-' + (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2, 9));
     const newTask = {
-      id: 'dev-' + (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2, 9)),
+      id: taskId,
       summary: taskName,
       explanation: explanation,
       due_date: new Date().toISOString(),
@@ -380,6 +477,25 @@ export default function App() {
     };
     setTimothyQueue((prev) => [newTask, ...prev]);
     showToast('success', `テモテに開発指示を送りました：『${taskName}』の自動分析＆支援を開始します。`);
+
+    try {
+      await fetch('/api/github/task-logs/start', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Security-Token': (import.meta as any).env?.VITE_TIMOTHY_SECURITY_TOKEN || ''
+        },
+        body: JSON.stringify({
+          id: taskId,
+          task_name: taskName,
+          explanation: explanation,
+          file_path: filePath || 'N/A',
+          repo_name: repoName || 'Local Project',
+        })
+      });
+    } catch (err) {
+      console.warn('Failed to register task execution log:', err);
+    }
   };
 
   const handleDismissPastTask = async (taskId: string, deleteFromDb: boolean) => {
@@ -625,6 +741,12 @@ export default function App() {
         };
 
         rec.onresult = (event: any) => {
+          // Noise Gate filtering: only process transcripts when noise gate is open (voice is active)
+          if (!isGateOpenRef.current) {
+            setSpeechFeedback('ノイズ除去ゲート作動中 (しきい値以下の音声をミュートしています)');
+            return;
+          }
+
           let interimTranscript = '';
           let finalTranscript = '';
           for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -658,16 +780,106 @@ export default function App() {
     }
   }, []);
 
-  // Waveform simulation
+  // Real-time Web Audio API analyzer with mic sensitivity and noise gate threshold
   useEffect(() => {
-    let interval: any;
+    let audioCtx: AudioContext | null = null;
+    let analyser: AnalyserNode | null = null;
+    let micStream: MediaStream | null = null;
+    let animationFrameId: number;
+    let fallbackInterval: any = null;
+
     if (isRecording) {
-      interval = setInterval(() => {
-        setWaveHeights(waveHeights.map(() => Math.floor(Math.random() * 35) + 8));
-      }, 100);
+      const constraints = {
+        audio: {
+          noiseSuppression: enableNativeNoiseSuppression,
+          echoCancellation: enableNativeEchoCancellation,
+        },
+      };
+
+      navigator.mediaDevices.getUserMedia(constraints)
+        .then((stream) => {
+          micStream = stream;
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+          audioCtx = new AudioContextClass();
+          const source = audioCtx.createMediaStreamSource(stream);
+          analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 64;
+          source.connect(analyser);
+
+          const bufferLength = analyser.frequencyBinCount;
+          const dataArray = new Uint8Array(bufferLength);
+
+          const checkAudio = () => {
+            if (!analyser || !audioCtx) return;
+            analyser.getByteFrequencyData(dataArray);
+
+            let sum = 0;
+            for (let i = 0; i < bufferLength; i++) {
+              sum += dataArray[i];
+            }
+            const average = bufferLength > 0 ? sum / bufferLength : 0;
+            const rawVolume = (average / 255) * 100;
+
+            const amplifiedVolume = Math.min(100, Math.round(rawVolume * micSensitivityRef.current));
+            setRealtimeVolume(amplifiedVolume);
+
+            if (amplifiedVolume >= noiseThresholdRef.current) {
+              isGateOpenRef.current = true;
+              lastDetectedVoiceTimeRef.current = Date.now();
+              setIsGateOpen(true);
+            } else {
+              if (Date.now() - lastDetectedVoiceTimeRef.current > 800) {
+                isGateOpenRef.current = false;
+                setIsGateOpen(false);
+              }
+            }
+
+            const waveData = [];
+            const step = Math.max(1, Math.floor(bufferLength / 9));
+            for (let i = 0; i < 9; i++) {
+              const freqVal = dataArray[(i * step) % bufferLength] || 0;
+              const height = isGateOpenRef.current
+                ? Math.max(4, Math.floor((freqVal / 255) * 35 * micSensitivityRef.current))
+                : 4;
+              waveData.push(height);
+            }
+            setWaveHeights(waveData);
+
+            animationFrameId = requestAnimationFrame(checkAudio);
+          };
+
+          checkAudio();
+        })
+        .catch((err) => {
+          console.warn('Could not initialize real-time Web Audio API analyzer, using fallback simulation:', err);
+          fallbackInterval = setInterval(() => {
+            setIsGateOpen(true);
+            isGateOpenRef.current = true;
+            setRealtimeVolume(Math.floor(Math.random() * 40) + 20);
+            setWaveHeights(Array.from({ length: 9 }, () => Math.floor(Math.random() * 30) + 8));
+          }, 100);
+        });
+    } else {
+      setRealtimeVolume(0);
+      setIsGateOpen(true);
+      isGateOpenRef.current = true;
     }
-    return () => clearInterval(interval);
-  }, [isRecording, waveHeights]);
+
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+      if (fallbackInterval) {
+        clearInterval(fallbackInterval);
+      }
+      if (audioCtx) {
+        audioCtx.close().catch(() => {});
+      }
+      if (micStream) {
+        micStream.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, [isRecording, enableNativeNoiseSuppression, enableNativeEchoCancellation]);
 
   // Fetch system diagnostics status
   const fetchSystemStatus = async () => {
@@ -764,6 +976,12 @@ export default function App() {
     setIsSearching(true);
     
     try {
+      const isUnfiltered = selectedCategory === 'all' && 
+                           selectedTags.length === 0 && 
+                           !dateFrom && 
+                           !dateTo && 
+                           !queryText.trim();
+
       const res = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -782,6 +1000,10 @@ export default function App() {
       const data = await res.json();
       setMatchedEntries(data.entries || []);
       setAiAnswer(data.answer);
+
+      if (isUnfiltered) {
+        setAllCalendarEntries(data.entries || []);
+      }
 
       if (queryText.trim() && data.answer) {
         showToast('info', 'AIが一致する記録から回答を合成しました。');
@@ -865,9 +1087,6 @@ export default function App() {
   // Import public memory into user's own memory log
   const handleImportPublicMemory = async (pubMem: any) => {
     try {
-      const confirmImport = window.confirm(`「${pubMem.title}」をあなたの個人記憶ログにインポートしますか？`);
-      if (!confirmImport) return;
-
       const rawInput = `【インポートされた公開記憶】\nタイトル: ${pubMem.title}\n内容: ${pubMem.content}\nタグ: ${pubMem.tags?.join(', ') || ''}`;
       
       const res = await fetch('/api/ingest', {
@@ -890,6 +1109,95 @@ export default function App() {
     } catch (err) {
       console.error('Failed to import public memory:', err);
       showToast('error', 'インポート中にエラーが発生しました。');
+    }
+  };
+
+  // Fetch GitHub Repositories for preview
+  const handleFetchGitHubRepos = async () => {
+    const cleanUsername = extractGitHubUsername(gitHubUsername);
+    if (!cleanUsername) {
+      setGithubError('有効なGitHubユーザー名を入力してください。');
+      return;
+    }
+    setGitHubUsername(cleanUsername);
+
+    setIsFetchingGitHub(true);
+    setGithubError(null);
+    setGithubRepos([]);
+    try {
+      const res = await fetch(`/api/github/fetch-repos?username=${encodeURIComponent(cleanUsername)}`, {
+        headers: {
+          'X-Security-Token': (import.meta as any).env?.VITE_TIMOTHY_SECURITY_TOKEN || ''
+        }
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `HTTPエラー: ${res.status}`);
+      }
+      const data = await res.json();
+      if (data.success) {
+        const repos = data.repos || [];
+        setGithubRepos(repos);
+        if (repos.length > 0) {
+          setSelectedRepoForDashboard(repos[0].name);
+        }
+        showToast('success', `${gitHubUsername} のリポジトリ一覧を取得しました！`);
+      } else {
+        throw new Error('リポジトリの取得に失敗しました。');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setGithubError(err.message || 'データ取得エラーが発生しました。');
+      showToast('error', 'GitHubリポジトリ一覧の取得に失敗しました。');
+    } finally {
+      setIsFetchingGitHub(false);
+    }
+  };
+
+  // Sync GitHub Repositories as memories in DB
+  const handleSyncGitHubRepos = async () => {
+    const cleanUsername = extractGitHubUsername(gitHubUsername);
+    if (!cleanUsername) {
+      showToast('error', '有効なGitHubユーザー名を入力してください。');
+      return;
+    }
+    setGitHubUsername(cleanUsername);
+    
+    setIsSyncingGitHub(true);
+    setGithubError(null);
+    try {
+      const res = await fetch('/api/github/sync-repos', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Security-Token': (import.meta as any).env?.VITE_TIMOTHY_SECURITY_TOKEN || ''
+        },
+        body: JSON.stringify({
+          username: cleanUsername,
+          user_id: currentUser.id
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `HTTPエラー: ${res.status}`);
+      }
+
+      const data = await res.json();
+      if (data.success) {
+        showToast('success', `ルカは ${gitHubUsername} のリポジトリを ${data.synced_count} 件、長期記憶として同期コンパイルしました！`);
+        // Refresh search and tags list so the newly ingested github repositories are immediately visible in Ruka Memories UI
+        handleSearch();
+        fetchTags();
+      } else {
+        throw new Error('同期処理に失敗しました。');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setGithubError(err.message || '同期エラーが発生しました。');
+      showToast('error', 'GitHubリポジトリ同期に失敗しました。');
+    } finally {
+      setIsSyncingGitHub(false);
     }
   };
 
@@ -1341,6 +1649,157 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
                   </div>
                 </div>
 
+                {/* Collapsible Microphone & Noise Gate Settings */}
+                <div id="mic-settings-container" className="border border-slate-100 rounded-xl bg-slate-50/50 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setShowMicSettings(!showMicSettings)}
+                    className="w-full px-3.5 py-2 flex items-center justify-between text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Sliders className="h-3.5 w-3.5 text-teal-600" />
+                      <span>マイク音声感度・ノイズしきい値調整</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-slate-400 font-normal">
+                        感度: {micSensitivity}x / 閾値: {noiseThreshold}%
+                      </span>
+                      {showMicSettings ? (
+                        <ChevronUp className="h-3.5 w-3.5 text-slate-400" />
+                      ) : (
+                        <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                      )}
+                    </div>
+                  </button>
+
+                  <AnimatePresence initial={false}>
+                    {showMicSettings && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="px-3.5 pb-4 pt-1 border-t border-slate-100 space-y-3 text-xs overflow-hidden"
+                      >
+                        {/* Meter (Always shown to help test mic levels) */}
+                        <div className="space-y-1.5 bg-white p-2.5 rounded-lg border border-slate-100 shadow-3xs">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-slate-500 font-medium flex items-center gap-1">
+                              <Volume2 className="h-3.5 w-3.5 text-teal-500" />
+                              リアルタイム入力音量レベル:
+                            </span>
+                            <span className="font-mono font-semibold text-slate-700">
+                              {realtimeVolume}% {isRecording ? (isGateOpen ? '(音声検知中)' : '(静音・遮断中)') : '(待機中)'}
+                            </span>
+                          </div>
+                          
+                          <div className="relative h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                            {/* Threshold bar marker */}
+                            <div 
+                              className="absolute top-0 bottom-0 w-0.5 bg-red-400 z-20"
+                              style={{ left: `${noiseThreshold}%` }}
+                              title={`ノイズしきい値: ${noiseThreshold}%`}
+                            />
+                            {/* Real-time Volume level fill */}
+                            <div 
+                              className={`h-full transition-all duration-75 ${
+                                isGateOpen && realtimeVolume >= noiseThreshold 
+                                  ? 'bg-teal-500' 
+                                  : 'bg-slate-300'
+                              }`}
+                              style={{ width: `${realtimeVolume}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between text-[9px] text-slate-400 font-mono">
+                            <span>0%</span>
+                            <span className="text-red-500 font-medium" style={{ marginLeft: `${noiseThreshold - 10}%` }}>
+                              しきい値 ({noiseThreshold}%)
+                            </span>
+                            <span>100%</span>
+                          </div>
+                        </div>
+
+                        {/* Sensitivity Slider */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium text-slate-600">マイクゲイン (入力感度):</span>
+                            <span className="font-mono font-bold text-teal-600">{micSensitivity.toFixed(1)}x</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="range"
+                              min="0.1"
+                              max="3.0"
+                              step="0.1"
+                              value={micSensitivity}
+                              onChange={(e) => setMicSensitivity(parseFloat(e.target.value))}
+                              className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-teal-600"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setMicSensitivity(1.0)}
+                              className="px-2 py-0.5 text-[10px] bg-white border border-slate-200 hover:bg-slate-50 rounded text-slate-500 font-medium transition-colors"
+                            >
+                              リセット
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-slate-400 leading-normal">
+                            マイク入力が小さくて認識されにくい場合は値を大きくし、ノイズが多い場合は小さくしてください。
+                          </p>
+                        </div>
+
+                        {/* Threshold Slider */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium text-slate-600">ノイズゲートしきい値 (閾値):</span>
+                            <span className="font-mono font-bold text-teal-600">{noiseThreshold}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="80"
+                            step="1"
+                            value={noiseThreshold}
+                            onChange={(e) => setNoiseThreshold(parseInt(e.target.value))}
+                            className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-teal-600"
+                          />
+                          <p className="text-[10px] text-slate-400 leading-normal">
+                            この値以下の音量を「ノイズ」として無視します。静かな環境では低くし、雑音が多い環境では高めに調整してください。
+                          </p>
+                        </div>
+
+                        {/* Device / Hardware Filters */}
+                        <div className="bg-white p-2.5 rounded-lg border border-slate-100 space-y-2">
+                          <span className="text-[10px] text-slate-400 font-bold tracking-wider uppercase">
+                            デバイス側・ブラウザ内蔵フィルタ:
+                          </span>
+                          <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600">
+                            <label className="flex items-center gap-1.5 cursor-pointer hover:text-slate-800">
+                              <input
+                                type="checkbox"
+                                checked={enableNativeNoiseSuppression}
+                                onChange={(e) => setEnableNativeNoiseSuppression(e.target.checked)}
+                                className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 h-3.5 w-3.5"
+                              />
+                              <span>ノイズ抑制機能</span>
+                            </label>
+                            <label className="flex items-center gap-1.5 cursor-pointer hover:text-slate-800">
+                              <input
+                                type="checkbox"
+                                checked={enableNativeEchoCancellation}
+                                onChange={(e) => setEnableNativeEchoCancellation(e.target.checked)}
+                                className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 h-3.5 w-3.5"
+                              />
+                              <span>エコー除去機能</span>
+                            </label>
+                          </div>
+                        </div>
+
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
                 {/* Voice Status Indicator and Simulated Wave */}
                 <AnimatePresence>
                   {isRecording && (
@@ -1757,6 +2216,65 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
                         {task.explanation}
                       </p>
 
+                      {/* Log viewer toggle */}
+                      <div className="mt-3 flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (activeLogTaskId === task.id) {
+                              setActiveLogTaskId(null);
+                            } else {
+                              setActiveLogTaskId(task.id);
+                            }
+                          }}
+                          className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 ${
+                            activeLogTaskId === task.id
+                              ? 'bg-slate-900 text-white border-slate-950 shadow-sm'
+                              : 'bg-white hover:bg-slate-50 text-indigo-600 border-indigo-200'
+                          }`}
+                        >
+                          <Terminal className="h-3 w-3" />
+                          <span>{activeLogTaskId === task.id ? 'ログを隠す' : '自動実行ログ (Live Logs)'}</span>
+                        </button>
+                      </div>
+
+                      {/* Live Terminal Area */}
+                      {activeLogTaskId === task.id && (
+                        <div className="mt-2.5 bg-slate-950 text-slate-200 p-3 rounded-lg border border-slate-800 font-mono text-[9.5px] leading-relaxed space-y-1.5 shadow-inner max-h-48 overflow-y-auto">
+                          <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-1.5 text-[8.5px] text-slate-500 font-bold">
+                            <span>TIMOTHY-LOGS // {task.id}</span>
+                            <span className="flex items-center gap-1">
+                              <span className={`h-1.5 w-1.5 rounded-full ${task.status === 'running' ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
+                              <span>{task.status === 'running' ? 'STREAMING' : 'COMPLETED'}</span>
+                            </span>
+                          </div>
+                          {activeLogData && activeLogData.visible_logs && activeLogData.visible_logs.length > 0 ? (
+                            activeLogData.visible_logs.map((log: any, idx: number) => (
+                              <div key={idx} className="flex gap-1.5 items-start hover:bg-white/5 p-0.5 rounded transition-colors">
+                                <span className="text-indigo-400 select-none">❯</span>
+                                <div className="flex-1">
+                                  <span className="text-[8.5px] text-slate-500 mr-1.5 select-none">
+                                    {new Date(log.timestamp).toLocaleTimeString([], { hour12: false })}
+                                  </span>
+                                  <span className={log.message.includes('🎉') || log.message.includes('完了') ? 'text-emerald-400 font-bold' : log.message.includes('🤖') ? 'text-amber-300 font-bold' : 'text-slate-300'}>
+                                    {log.message}
+                                  </span>
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-slate-500 italic py-2 text-center animate-pulse">
+                              自動タスクログを待機中...
+                            </div>
+                          )}
+                          {task.status === 'running' && (
+                            <div className="text-[8.5px] text-slate-500 pl-4 animate-pulse">
+                              █ ANALYZING DEPENDENCY GRAPH...
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {task.status === 'completed' && task.report && (
                         <div className="mt-2.5 pt-2 border-t border-slate-200/60 text-[11px] text-slate-700 bg-white/80 p-2.5 rounded-lg border border-slate-100 leading-relaxed font-mono">
                           <CheckCircle className="h-3 w-3 text-emerald-500 inline mr-1" />
@@ -1781,8 +2299,122 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
                 <Github className="h-4.5 w-4.5 text-slate-800" />
                 <h3 className="text-sm font-bold text-slate-900">テモテの開発ダッシュボード (GitHub Repo Tasks)</h3>
               </div>
-              <GitHubRepoTasks onAcceptDevTask={handleAcceptDevTask} />
+              <GitHubRepoTasks 
+                onAcceptDevTask={handleAcceptDevTask}
+                username={gitHubUsername}
+                repoName={selectedRepoForDashboard || undefined}
+                repos={githubRepos}
+                onSelectRepo={setSelectedRepoForDashboard}
+              />
             </div>
+
+            {/* Ruka's External GitHub Repository Sync */}
+            <div className="bg-white rounded-2xl border border-indigo-100 p-6 shadow-xs space-y-4 relative overflow-hidden">
+              <div className="absolute top-0 right-0 h-24 w-24 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none" />
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                <Sparkles className="h-4.5 w-4.5 text-indigo-600" />
+                <h3 className="text-sm font-bold text-slate-900">ルカのGitHubリポジトリ自動同期・記憶</h3>
+              </div>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                指定したGitHubアカウントのパブリックリポジトリ一覧をルカ（AI）が取得・コンパイルし、あなたの「共有記憶（Memories）」としてデータベースへインジェストします。同期後はルカとの対話や検索でこれらのプロジェクト情報を活用可能になります。
+              </p>
+
+              <div className="space-y-3 pt-1">
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-2 text-slate-400 text-xs font-mono pointer-events-none">github.com/</span>
+                    <input
+                      type="text"
+                      value={gitHubUsername}
+                      onChange={(e) => setGitHubUsername(e.target.value)}
+                      onBlur={() => setGitHubUsername(extractGitHubUsername(gitHubUsername))}
+                      placeholder="username"
+                      className="w-full pl-[84px] pr-3 py-1.5 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/50 bg-slate-50/50"
+                    />
+                  </div>
+                  <button
+                    onClick={handleFetchGitHubRepos}
+                    disabled={isFetchingGitHub || isSyncingGitHub}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:bg-slate-50 disabled:text-slate-400 text-slate-700 font-bold text-xs rounded-xl transition-all flex items-center gap-1 border border-slate-200 cursor-pointer"
+                  >
+                    {isFetchingGitHub ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
+                    <span>取得</span>
+                  </button>
+                  <button
+                    onClick={handleSyncGitHubRepos}
+                    disabled={isFetchingGitHub || isSyncingGitHub}
+                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-500/50 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                  >
+                    {isSyncingGitHub ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                    <span>ルカに記憶させる</span>
+                  </button>
+                </div>
+
+                {githubError && (
+                  <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl flex items-start gap-2 text-[11px] text-rose-600">
+                    <AlertCircle className="h-3.5 w-3.5 text-rose-500 shrink-0 mt-0.5" />
+                    <span>{githubError}</span>
+                  </div>
+                )}
+
+                {githubRepos.length > 0 && (
+                  <div className="space-y-2 pt-1 border-t border-slate-100">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-bold text-slate-600">プレビュー: 取得したリポジトリ一覧 ({githubRepos.length} 件) - クリックでダッシュボード対象を設定</span>
+                      <span className="text-slate-400 font-mono">@{gitHubUsername}</span>
+                    </div>
+
+                    <div className="max-h-56 overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-50 bg-slate-50/30">
+                      {githubRepos.map((repo) => {
+                        const isSelected = selectedRepoForDashboard === repo.name;
+                        return (
+                          <div 
+                            key={repo.id} 
+                            onClick={() => {
+                              setSelectedRepoForDashboard(repo.name);
+                              showToast('success', `ダッシュボードの対象を「${repo.name}」に設定しました。上の開発ダッシュボードを確認してください。`);
+                            }}
+                            className={`p-2.5 flex items-start justify-between gap-3 text-xs hover:bg-slate-100 transition-all cursor-pointer rounded-lg ${
+                              isSelected ? 'bg-indigo-50/80 border-l-4 border-indigo-500' : ''
+                            }`}
+                          >
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-bold text-slate-800">{repo.name}</span>
+                                {repo.language && (
+                                  <span className="px-1.5 py-0.5 bg-slate-200/60 text-slate-600 text-[9px] rounded-sm font-mono">{repo.language}</span>
+                                )}
+                                {isSelected && (
+                                  <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-700 text-[9px] rounded-sm font-bold animate-pulse">分析対象</span>
+                                )}
+                              </div>
+                              {repo.description ? (
+                                <p className="text-[11px] text-slate-500 leading-snug line-clamp-2">{repo.description}</p>
+                              ) : (
+                                <p className="text-[11px] text-slate-400 italic">説明はありません</p>
+                              )}
+                            </div>
+                            <div className="flex flex-col items-end gap-1 font-mono text-[10px] text-slate-500 shrink-0">
+                              <div className="flex items-center gap-1 text-amber-500 font-bold">
+                                <Star className="h-3 w-3 fill-amber-500" />
+                                <span>{repo.stargazers_count}</span>
+                              </div>
+                              <span className="text-[9px] text-slate-400">更新: {new Date(repo.updated_at).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Noah's Counseling Room */}
+            <NoahCounseling
+              userId={currentUser.id}
+              showToast={(msg, type) => showToast(type, msg)}
+            />
 
           </section>
 

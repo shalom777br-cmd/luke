@@ -8,5 +8,6 @@ export abstract class BaseProvider {
     currentCategory: string,
     currentImportance: number
   ): Promise<{ suggested_category: string; suggested_importance: number; reason: string }>;
+  abstract counselWithNoah(worryText: string, healthHistory: MemoryEntry[]): Promise<string>;
 }
 

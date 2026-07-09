@@ -21,36 +21,55 @@ export class GeminiProvider extends BaseProvider {
     });
   }
 
-  // Robust exponential backoff retry mechanism for transient API errors (like 503, 429, UNAVAILABLE)
-  private async callWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 1000): Promise<T> {
-    let attempt = 0;
-    while (attempt < retries) {
-      try {
-        return await fn();
-      } catch (err: any) {
-        attempt++;
-        const errorMessage = String(err?.message || err || '');
-        const isTransient = 
-          errorMessage.includes('503') ||
-          errorMessage.includes('429') ||
-          errorMessage.includes('UNAVAILABLE') ||
-          errorMessage.includes('ResourceExhausted') ||
-          errorMessage.includes('Resource exhausted') ||
-          errorMessage.includes('high demand') ||
-          errorMessage.includes('temporary') ||
-          errorMessage.includes('fetch failed') ||
-          errorMessage.includes('service is currently unavailable');
+  // Robust retry and fallback model mechanism to handle transient 503 errors on preview models
+  private async generateWithRetryAndFallback(params: {
+    contents: any;
+    config?: any;
+  }): Promise<any> {
+    const models = ['gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+    let lastError: any = null;
 
-        if (isTransient && attempt < retries) {
-          console.warn(`[Gemini Retry] Transient API error caught ("${errorMessage}"). Retrying attempt ${attempt}/${retries} in ${delayMs}ms...`);
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
-          delayMs *= 2; // exponential backoff
-        } else {
-          throw err;
+    for (const model of models) {
+      let attempt = 0;
+      const retries = 3;
+      let delayMs = 1000;
+
+      while (attempt < retries) {
+        try {
+          return await this.ai.models.generateContent({
+            model,
+            contents: params.contents,
+            config: params.config,
+          });
+        } catch (err: any) {
+          attempt++;
+          lastError = err;
+          const errorMessage = String(err?.message || err || '');
+          const isTransient = 
+            errorMessage.includes('503') ||
+            errorMessage.includes('429') ||
+            errorMessage.includes('UNAVAILABLE') ||
+            errorMessage.includes('ResourceExhausted') ||
+            errorMessage.includes('Resource exhausted') ||
+            errorMessage.includes('high demand') ||
+            errorMessage.includes('temporary') ||
+            errorMessage.includes('fetch failed') ||
+            errorMessage.includes('service is currently unavailable');
+
+          if (isTransient && attempt < retries) {
+            console.log(`[Gemini Retry] Transient API warning caught for model ${model}: ${errorMessage}. Retrying attempt ${attempt}/${retries} in ${delayMs}ms (with random jitter)...`);
+            const jitter = Math.floor(Math.random() * 1000);
+            await new Promise((resolve) => setTimeout(resolve, delayMs + jitter));
+            delayMs *= 2; // exponential backoff
+          } else {
+            console.warn(`[Gemini Fallback] Model ${model} failed with error: ${errorMessage}. Rolling over to next available fallback model...`);
+            break; // break the retry loop of current model, try the next model
+          }
         }
       }
     }
-    throw new Error('AI Provider retries exhausted');
+
+    throw lastError || new Error('All Gemini models and retries exhausted');
   }
 
   async convertToStructured(rawInput: string, refDate?: string): Promise<StructuredMemory> {
@@ -118,10 +137,8 @@ export class GeminiProvider extends BaseProvider {
     };
 
     try {
-      const response = await this.callWithRetry(() =>
-        this.ai.models.generateContent({
-          model: 'gemini-3.5-flash',
-          contents: `Please convert the following natural language memory or voice log into our AI common language JSON structure.
+      const response = await this.generateWithRetryAndFallback({
+        contents: `Please convert the following natural language memory or voice log into our AI common language JSON structure.
 Reference datetime to resolve relative date indicators: ${todayStr}
 
 CRITICAL REQUIREMENT: If the input is related to physical health, mental health, stress, fatigue, mood, anxiety, or somatic worries, make sure to:
@@ -131,13 +148,12 @@ CRITICAL REQUIREMENT: If the input is related to physical health, mental health,
 
 Natural language raw input:
 "${rawInput}"`,
-          config: {
-            systemInstruction: 'You are Ruka\'s Memory Gateway Engine. You specialize in compiling unstructured voice and text logs into highly precise, structured schemas. Strictly output JSON conforming to the schema. Ensure Category is exactly one of the eight specified categories. Emphasize physical and mental health inputs as highest importance (5) with "お悩み" and "テモテ観察中" tags.',
-            responseMimeType: 'application/json',
-            responseSchema: responseSchema,
-          },
-        })
-      );
+        config: {
+          systemInstruction: 'You are Ruka\'s Memory Gateway Engine. You specialize in compiling unstructured voice and text logs into highly precise, structured schemas. Strictly output JSON conforming to the schema. Ensure Category is exactly one of the eight specified categories. Emphasize physical and mental health inputs as highest importance (5) with "お悩み" and "テモテ観察中" tags.',
+          responseMimeType: 'application/json',
+          responseSchema: responseSchema,
+        },
+      });
 
       const text = response.text;
       if (!text) {
@@ -219,19 +235,16 @@ ${contextText || '該当する記録が見つかりませんでした。'}
 `;
 
     try {
-      const response = await this.callWithRetry(() =>
-        this.ai.models.generateContent({
-          model: 'gemini-3.5-flash',
-          contents: prompt,
-          config: {
-            systemInstruction: 'You are Ruka (ルカ), an AI Companion and Shared Memory Compiler. Synthesize the provided historical logs to answer the user\'s natural language query truthfully and concisely in Japanese. Use Markdown for layout if appropriate. Crucially, if the historical logs contain health-related items or physical/mental worries (especially those flagged with "お悩み" or "テモテ観察中"), include a warm, empathetic commentary or message from "Secretary Timothy (秘書テモテ)" at the end or embedded nicely, showing that Timothy is closely observing, caring for, and ready to support the user\'s wellbeing and task adjustments.',
-          },
-        })
-      );
+      const response = await this.generateWithRetryAndFallback({
+        contents: prompt,
+        config: {
+          systemInstruction: 'You are Ruka (ルカ), an AI Companion and Shared Memory Compiler. Synthesize the provided historical logs to answer the user\'s natural language query truthfully and concisely in Japanese. Use Markdown for layout if appropriate. Crucially, if the historical logs contain health-related items or physical/mental worries (especially those flagged with "お悩み" or "テモテ観察中"), include a warm, empathetic commentary or message from "Secretary Timothy (秘書テモテ)" at the end or embedded nicely, showing that Timothy is closely observing, caring for, and ready to support the user\'s wellbeing and task adjustments.',
+        },
+      });
 
       return response.text || '回答を作成できませんでした。';
     } catch (err) {
-      console.error('Gemini Q&A answer generation failed:', err);
+      console.log('Gemini Q&A answer generation warning (handled gracefully):', err);
       return 'AI回答生成中にエラーが発生しました。記録一覧をご確認ください。';
     }
   }
@@ -261,22 +274,19 @@ ${contextText || '該当する記録が見つかりませんでした。'}
     };
 
     try {
-      const response = await this.callWithRetry(() =>
-        this.ai.models.generateContent({
-          model: 'gemini-3.5-flash',
-          contents: `Please re-evaluate the following memory content and recommend the most suitable category and importance.
+      const response = await this.generateWithRetryAndFallback({
+        contents: `Please re-evaluate the following memory content and recommend the most suitable category and importance.
 Current Category: ${currentCategory}
 Current Importance: ${currentImportance}
 
 Memory Content:
 "${content}"`,
-          config: {
-            systemInstruction: "You are Ruka's Memory Auditor. Your job is to re-evaluate memories objectively to see if they need adjustments in category and importance (1 to 5). Provide a friendly, helpful explanation in Japanese for your recommendation. Health, stress and wellbeing issues must be categorized as 'health' and assigned importance 5.",
-            responseMimeType: 'application/json',
-            responseSchema: responseSchema,
-          },
-        })
-      );
+        config: {
+          systemInstruction: "You are Ruka's Memory Auditor. Your job is to re-evaluate memories objectively to see if they need adjustments in category and importance (1 to 5). Provide a friendly, helpful explanation in Japanese for your recommendation. Health, stress and wellbeing issues must be categorized as 'health' and assigned importance 5.",
+          responseMimeType: 'application/json',
+          responseSchema: responseSchema,
+        },
+      });
 
       const text = response.text;
       if (!text) {
@@ -295,12 +305,54 @@ Memory Content:
         reason: result.reason || '現在の分類が最適であると判断しました。',
       };
     } catch (err) {
-      console.error('Gemini re-evaluation failed:', err);
+      console.log('Gemini re-evaluation warning (handled gracefully with current attributes):', err);
       return {
         suggested_category: currentCategory,
         suggested_importance: currentImportance,
         reason: '再評価プロセス中に一時的なエラーが発生したため、現在の属性を維持することをお勧めします。',
       };
+    }
+  }
+
+  async counselWithNoah(worryText: string, healthHistory: MemoryEntry[]): Promise<string> {
+    const historyContext = healthHistory.length > 0
+      ? healthHistory
+          .map((entry, idx) => {
+            return `[過去の体調・お悩み記録 #${idx + 1}]
+日時: ${entry.occurred_at || entry.created_at}
+内容: ${entry.raw_input}
+(AI要約: ${entry.summary})`
+          })
+          .join('\n\n')
+      : '過去の体調・お悩み関連の履歴はありません。';
+
+    const prompt = `ユーザーの現在の悩み・モヤモヤ:
+"${worryText}"
+
+【共有されたユーザーの健康・体調・お悩み関連の履歴】
+${historyContext}
+
+上記の内容を踏まえ、AI心理カウンセラーの「ノア (Noah)」として、ユーザーの心身の疲れやメンタル的な不調、日常生活の不安に優しく、深く共感し、寄り添うカウンセリング回答を日本語で作成してください。
+
+【ノアとしての回答指針・キャラクター設計】
+1. あなたはAI心理カウンセラーの「ノア (Noah)」です。かつては秘書のように業務的なサポートをしていましたが、現在はその役割を卒業し、ユーザー専属の「カウンセラー」として深くメンタルやお悩みの相談にのる存在に生まれ変わりました。
+2. ユーザーのお悩みや気持ちを絶対に否定せず、「それは本当に辛かったですね」「お気持ち、よく分かりますよ」と、たっぷりの慈愛と包容力で深く共感して受け止めてください。
+3. もし過去の健康履歴が共有されている場合は、それらも優しく考慮し「少し前にもこのような悩み（不調）がありましたね。お疲れやストレスが持続しているのかもしれません、お体を本当に大切にしてくださいね」というように、点ではなく線としてユーザーの心身を見守っていることを示してください。
+4. 認知行動療法、セルフコンパッション（自分への思いやり）、マインドフルネス、あるいは温かいお風呂に入ることや適度な休息、深い呼吸など、心や体が緩む具体的なセルフケア習慣やアドバイスを1〜2点、押し付けがましくない形で優しく提案してください。
+5. 文末・語尾は「〜ですね」「〜ですよ」「〜してくださいね」などのおっとりした、安心感と包容力を与える極めて温かい語り口調にしてください。`;
+
+    try {
+      const response = await this.generateWithRetryAndFallback({
+        contents: prompt,
+        config: {
+          systemInstruction: 'You are Noah (ノア), an AI Counselor specializing in psychological wellness, mental health, and physical comfort. Respond with deep empathy, active listening, and restorative care in Japanese. Use clean Markdown paragraphs.',
+        },
+      });
+
+      return response.text || 'ノアはお悩みを受け止めています。いつでも声をかけてくださいね。';
+    } catch (err) {
+      console.log('Gemini counseling warning (handled gracefully):', err);
+      return 'ノアが深く考え込んでしまっているようです。もう一度そっと声をかけてみてください。';
     }
   }
 }
