@@ -169,7 +169,7 @@ function writeLocalDb(entries: MemoryEntry[]): void {
 }
 
 export class MemoryGatewayDb {
-  private supabase: SupabaseClient | null = null;
+  public supabase: SupabaseClient | null = null;
   public mode: 'supabase' | 'local' = 'local';
   private isTableVerified: boolean | null = null;
   private isPublicTableVerified: boolean | null = null;
@@ -271,10 +271,11 @@ export class MemoryGatewayDb {
   // Insert a new memory entry
   async insertEntry(entry: MemoryEntry): Promise<void> {
     const tableExists = await this.ensureTableExists();
-    // Rule: Save to Supabase if category is 'faith' OR (category is NOT 'task' AND importance >= 4)
+    // Rule: Save to Supabase if category is 'faith' OR (category is NOT 'task' AND importance >= 4) OR is GitHub sync/repo memory
     const isBrainLibraryItem =
       entry.category === 'faith' ||
-      (entry.category !== 'task' && entry.importance >= 4);
+      (entry.category !== 'task' && entry.importance >= 4) ||
+      (entry.tags && (entry.tags.includes('github') || entry.tags.includes('repository')));
 
     if (this.mode === 'supabase' && this.supabase && tableExists && isBrainLibraryItem) {
       console.log(`Saving Brain Library item [${entry.category}] with importance [${entry.importance}] to Supabase...`);

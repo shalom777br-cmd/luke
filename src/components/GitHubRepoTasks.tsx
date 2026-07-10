@@ -70,8 +70,11 @@ export const GitHubRepoTasks: React.FC<GitHubRepoTasksProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const url = username && repoName
-        ? `/api/github/repo-status?username=${encodeURIComponent(username)}&repo=${encodeURIComponent(repoName)}`
+      const selectedRepoObj = repos?.find(r => r.name === repoName);
+      const ownerUsername = (selectedRepoObj && selectedRepoObj.owner && selectedRepoObj.owner.login) || username;
+
+      const url = ownerUsername && repoName
+        ? `/api/github/repo-status?username=${encodeURIComponent(ownerUsername)}&repo=${encodeURIComponent(repoName)}`
         : '/api/github/repo-status';
       const res = await fetch(url, {
         headers: {

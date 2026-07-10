@@ -288,6 +288,13 @@ export default function App() {
   const [selectedRepoForDashboard, setSelectedRepoForDashboard] = useState<string | null>(null);
   const [githubError, setGithubError] = useState<string | null>(null);
 
+  // Temote Ask (Question Mode) states
+  const [activeGatewayTab, setActiveGatewayTab] = useState<'ingest' | 'ask'>('ingest');
+  const [askQuestion, setAskQuestion] = useState('');
+  const [isAsking, setIsAsking] = useState(false);
+  const [askResult, setAskResult] = useState<{ answer: string; detail?: string; allMatches?: any[] } | null>(null);
+  const [askError, setAskError] = useState<string | null>(null);
+
   // Fields for publishing a new public memory
   const [showPublishForm, setShowPublishForm] = useState(false);
   const [pubTitle, setPubTitle] = useState('');
@@ -368,6 +375,76 @@ export default function App() {
       }
     }
   }, []);
+
+  // Parse GitHub repo data from standard MemoryEntry objects saved in DB
+  const parseRepoFromMemory = (entry: MemoryEntry) => {
+    const raw = entry.raw_input || '';
+    const nameMatch = raw.match(/GitHubリポジトリ同期 \[(.+?)\]/) || entry.summary.match(/GitHubリポジトリ:\s*(.+)/);
+    const name = nameMatch ? nameMatch[1] : entry.summary.replace('GitHubリポジトリ: ', '');
+    
+    const ownerMatch = raw.match(/オーナー:\s*(.+)/);
+    const owner = ownerMatch ? ownerMatch[1].trim() : '';
+    
+    const descMatch = raw.match(/説明:\s*(.+)/);
+    const description = descMatch ? descMatch[1].trim() : '';
+    
+    const urlMatch = raw.match(/URL:\s*(.+)/);
+    const html_url = urlMatch ? urlMatch[1].trim() : '';
+    
+    const langMatch = raw.match(/言語:\s*(.+)/);
+    const language = langMatch ? langMatch[1].trim() : '';
+    
+    const starsMatch = raw.match(/スター数:\s*(\d+)/);
+    const stargazers_count = starsMatch ? parseInt(starsMatch[1], 10) : 0;
+    
+    const forksMatch = raw.match(/フォーク数:\s*(\d+)/);
+    const forks_count = forksMatch ? parseInt(forksMatch[1], 10) : 0;
+    
+    const issuesMatch = raw.match(/オープンイシュー数:\s*(\d+)/);
+    const open_issues_count = issuesMatch ? parseInt(issuesMatch[1], 10) : 0;
+
+    return {
+      id: entry.id,
+      name,
+      owner: { login: owner },
+      description,
+      html_url,
+      language,
+      stargazers_count,
+      forks_count,
+      open_issues_count,
+      created_at: entry.created_at,
+      updated_at: entry.occurred_at || entry.created_at
+    };
+  };
+
+  // Sync loaded memory entries to githubRepos list so previously saved/synchronized repos are automatically visible in Timothy Dashboard
+  useEffect(() => {
+    if (matchedEntries.length > 0) {
+      const memorizedRepos = matchedEntries
+        .filter((entry) => entry.tags && entry.tags.includes('github') && entry.tags.includes('repository'))
+        .map(parseRepoFromMemory);
+      
+      if (memorizedRepos.length > 0) {
+        setGithubRepos((prevRepos) => {
+          const merged = [...prevRepos];
+          for (const mRepo of memorizedRepos) {
+            if (!merged.some(r => r.name.toLowerCase() === mRepo.name.toLowerCase())) {
+              merged.push(mRepo);
+            }
+          }
+          return merged;
+        });
+
+        setSelectedRepoForDashboard((currentSelected) => {
+          if (!currentSelected && memorizedRepos.length > 0) {
+            return memorizedRepos[0].name;
+          }
+          return currentSelected;
+        });
+      }
+    }
+  }, [matchedEntries]);
 
   // Fetch entries and tags when user profile, filters, or lastCompiledEntry changes
   useEffect(() => {
@@ -907,23 +984,52 @@ export default function App() {
     }
   };
 
-  // Ingest Natural Language input
-  const handleIngest = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!rawInput.trim()) {
-      showToast('error', '入力欄が空です。メッセージか音声を入力してください。');
-      return;
-    }
+  // Question detection utility for routing
+  const isQuestion = (text: string): boolean => {
+    const questionMarkers = ["?", "？", "か？", "か。", "ですか", "でしたか", "教えて", "何年", "何月", "何日", "いつ", "どこ", "だれ", "誰"];
+    return questionMarkers.some((marker) => text.includes(marker));
+  };
 
+  // Dedicated execution handler for Question Mode
+  const executeAsk = async (text: string) => {
+    setIsAsking(true);
+    setAskResult(null);
+    setAskError(null);
+    try {
+      const res = await fetch('/api/temote/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: text, user_id: currentUser.id }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || '検索中にエラーが発生しました');
+      }
+
+      const data = await res.json();
+      setAskResult(data);
+      showToast('success', '記録を検索しました。');
+    } catch (err: any) {
+      console.error('Failed to ask question:', err);
+      setAskError(err?.message || '不明なエラーが発生しました');
+      showToast('error', err?.message || '検索に失敗しました');
+    } finally {
+      setIsAsking(false);
+    }
+  };
+
+  // Dedicated execution handler for Ingest / Memory Compilation Mode
+  const executeIngest = async (text: string, typeToUse?: 'voice' | 'text') => {
     setIsIngesting(true);
     try {
-      const res = await fetch('/api/ingest', {
+      const res = await fetch('/api/temote/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: currentUser.id,
-          input_type: inputType,
-          raw_input: rawInput.trim(),
+          input_type: typeToUse || inputType,
+          raw_input: text,
         }),
       });
 
@@ -968,6 +1074,48 @@ export default function App() {
     } finally {
       setIsIngesting(false);
     }
+  };
+
+  // Ask Question to Temote (Question Mode)
+  const handleAskQuestion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const text = askQuestion.trim();
+    if (!text) {
+      showToast('error', '質問内容を入力してください。');
+      return;
+    }
+
+    if (!isQuestion(text)) {
+      showToast('info', '通常の文章を検知したため、記憶の記録モードに自動で振り分けました。');
+      setActiveGatewayTab('ingest');
+      setRawInput(text);
+      setAskQuestion('');
+      executeIngest(text, 'text');
+      return;
+    }
+
+    executeAsk(text);
+  };
+
+  // Ingest Natural Language input
+  const handleIngest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const text = rawInput.trim();
+    if (!text) {
+      showToast('error', '入力欄が空です。メッセージか音声を入力してください。');
+      return;
+    }
+
+    if (isQuestion(text)) {
+      showToast('info', '疑問詞・質問表現を検知したため、問いかけ（検索質問）モードに自動で振り分けました。');
+      setActiveGatewayTab('ask');
+      setAskQuestion(text);
+      setRawInput('');
+      executeAsk(text);
+      return;
+    }
+
+    executeIngest(text);
   };
 
   // Handle Search and AI Synthesis
@@ -1581,8 +1729,156 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
                 <h2 className="text-base font-bold text-slate-900">自然言語 記憶投入ゲートウェイ</h2>
               </div>
 
-              {/* Ingest Form */}
-              <form onSubmit={handleIngest} className="space-y-4">
+              {/* Tab Selector for Ingest Mode vs Question Mode */}
+              <div className="flex rounded-xl bg-slate-100 p-1 border border-slate-200 text-xs mb-5">
+                <button
+                  type="button"
+                  onClick={() => setActiveGatewayTab('ingest')}
+                  className={`flex-1 py-2 rounded-lg transition-all font-semibold flex items-center justify-center gap-1.5 ${activeGatewayTab === 'ingest' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  <span>記憶を記録 (インプット)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveGatewayTab('ask')}
+                  className={`flex-1 py-2 rounded-lg transition-all font-semibold flex items-center justify-center gap-1.5 ${activeGatewayTab === 'ask' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  <Search className="h-3.5 w-3.5" />
+                  <span>記憶に問いかける (質問)</span>
+                </button>
+              </div>
+
+              {activeGatewayTab === 'ask' ? (
+                /* Ask Form (Question Mode) */
+                <form onSubmit={handleAskQuestion} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700 block">
+                      質問内容を入力してください:
+                    </label>
+                    <div className="relative">
+                      <textarea
+                        rows={4}
+                        value={askQuestion}
+                        onChange={(e) => setAskQuestion(e.target.value)}
+                        placeholder="例：テモテの開発ダッシュボードに同期したGitHubリポジトリに関する情報はある？"
+                        className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none transition-all placeholder:text-slate-400 bg-slate-50/50 resize-none leading-relaxed"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAskQuestion('');
+                        setAskResult(null);
+                        setAskError(null);
+                        showToast('info', '質問をクリアしました。');
+                      }}
+                      className="text-xs text-slate-400 hover:text-slate-600 transition-colors font-medium"
+                    >
+                      入力をクリア
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isAsking || !askQuestion.trim()}
+                      className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-medium text-sm flex items-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-teal-600/10 active:scale-98"
+                    >
+                      {isAsking ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          <span>検索中...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Search className="h-4 w-4" />
+                          <span>質問する</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Results Display */}
+                  <AnimatePresence>
+                    {askError && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 5 }}
+                        className="p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 font-medium"
+                      >
+                        {askError}
+                      </motion.div>
+                    )}
+
+                    {askResult && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="space-y-3 pt-2"
+                      >
+                        <div className="p-4 bg-teal-50/70 border border-teal-100 rounded-xl space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-teal-800 bg-teal-100 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                              🔍 問いかけの回答
+                            </span>
+                            {askResult.matchedKeyword && (
+                              <span className="text-[10px] font-bold text-teal-600 bg-teal-100/60 px-2 py-0.5 rounded-full">
+                                マッチしたキーワード: {askResult.matchedKeyword}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm font-semibold text-slate-900 leading-relaxed">
+                            {askResult.answer}
+                          </p>
+                          {askResult.detail && (
+                            <div className="pt-2 border-t border-teal-100/60">
+                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1">
+                                記憶の背景コンテキスト:
+                              </span>
+                              <p className="text-xs text-slate-600 whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto bg-white/50 p-2.5 rounded border border-slate-100">
+                                {askResult.detail}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Other Matches */}
+                        {askResult.allMatches && askResult.allMatches.length > 1 && (
+                          <div className="space-y-1.5">
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                              関連するその他の記憶 ({askResult.allMatches.length} 件):
+                            </span>
+                            <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                              {askResult.allMatches.slice(1).map((match, idx) => (
+                                <div
+                                  key={idx}
+                                  className="p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs transition-all"
+                                >
+                                  <div className="flex items-center justify-between font-bold text-slate-700 mb-1">
+                                    <span>{match.year ? `${match.year}年の記録` : '関連の記録'}</span>
+                                  </div>
+                                  <p className="text-slate-800 font-semibold mb-1">
+                                    「{match.display_title || match.summary}」
+                                  </p>
+                                  {match.ai_context && (
+                                    <p className="text-slate-500 text-[11px] line-clamp-2">
+                                      {match.ai_context}
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </form>
+              ) : (
+                /* Ingest Form (Original Form) */
+                <form onSubmit={handleIngest} className="space-y-4">
                 
                 {/* Method Toggles */}
                 <div className="flex items-center justify-between">
@@ -1887,6 +2183,7 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
                   </button>
                 </div>
               </form>
+              )}
             </div>
 
             <SharedMemorySearch
