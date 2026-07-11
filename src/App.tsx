@@ -241,6 +241,17 @@ export default function App() {
   // Re-compiling state for entries that failed originally (e.g. 503 fallback)
   const [recompilingIds, setRecompilingIds] = useState<string[]>([]);
 
+  // Expired future schedules detection states
+  const [expiredFutureSchedules, setExpiredFutureSchedules] = useState<MemoryEntry[]>([]);
+  const [hasPromptedExpiredSchedules, setHasPromptedExpiredSchedules] = useState(false);
+  const [dismissedPastSchedules, setDismissedPastSchedules] = useState<string[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('dismissed_past_schedules');
+      return saved ? JSON.parse(saved) : [];
+    }
+    return [];
+  });
+
   // JSON Viewer and Export States
   const [showDbJsonModal, setShowDbJsonModal] = useState(false);
   const [selectedEntryJson, setSelectedEntryJson] = useState<MemoryEntry | null>(null);
@@ -475,6 +486,38 @@ export default function App() {
     localStorage.setItem('dismissed_alerts', JSON.stringify(dismissedAlerts));
   }, [dismissedAlerts]);
 
+  useEffect(() => {
+    localStorage.setItem('dismissed_past_schedules', JSON.stringify(dismissedPastSchedules));
+  }, [dismissedPastSchedules]);
+
+  // Expired future schedules detection loop
+  useEffect(() => {
+    if (allCalendarEntries.length === 0 || hasPromptedExpiredSchedules) return;
+
+    const now = new Date();
+    const expired = allCalendarEntries.filter((entry) => {
+      if (!entry.occurred_at || !entry.created_at) return false;
+      
+      const occurredTime = new Date(entry.occurred_at).getTime();
+      const createdTime = new Date(entry.created_at).getTime();
+      
+      // Ensure it was a future plan when created (more than 1 minute after created_at)
+      const wasFuture = occurredTime > createdTime + 60000;
+      // Ensure it is now in the past
+      const isPastNow = occurredTime <= now.getTime();
+      
+      // Check if already handled
+      const isDismissed = dismissedPastSchedules.includes(entry.id);
+
+      return wasFuture && isPastNow && !isDismissed;
+    });
+
+    if (expired.length > 0) {
+      setExpiredFutureSchedules(expired);
+      setHasPromptedExpiredSchedules(true);
+    }
+  }, [allCalendarEntries, dismissedPastSchedules, hasPromptedExpiredSchedules]);
+
   // Timothy task ticking loop
   useEffect(() => {
     const timer = setInterval(() => {
@@ -628,6 +671,81 @@ export default function App() {
     } finally {
       setDeletingEntryId(null);
     }
+  };
+
+  const handleDeleteExpiredSchedule = async (id: string) => {
+    try {
+      const res = await fetch('/api/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          user_id: currentUser.id,
+        }),
+      });
+      if (res.ok) {
+        showToast('success', '期限切れの予定を削除しました。');
+        setExpiredFutureSchedules((prev) => prev.filter((item) => item.id !== id));
+        handleSearch();
+        fetchTags();
+        fetchCalendarEntries();
+      } else {
+        showToast('error', '削除に失敗しました。');
+      }
+    } catch (err) {
+      console.error('Failed to delete expired schedule:', err);
+      showToast('error', '削除中にエラーが発生しました。');
+    }
+  };
+
+  const handleKeepExpiredSchedule = (id: string) => {
+    setDismissedPastSchedules((prev) => [...prev, id]);
+    setExpiredFutureSchedules((prev) => prev.filter((item) => item.id !== id));
+    showToast('info', '予定をデータベースに残しました。');
+  };
+
+  const handleKeepAllExpiredSchedules = () => {
+    const ids = expiredFutureSchedules.map((item) => item.id);
+    setDismissedPastSchedules((prev) => [...prev, ...ids]);
+    setExpiredFutureSchedules([]);
+    showToast('info', 'すべての予定をデータベースに残しました。');
+  };
+
+  const handleDeleteAllExpiredSchedules = async () => {
+    let successCount = 0;
+    const itemsToDelete = [...expiredFutureSchedules];
+    for (const item of itemsToDelete) {
+      try {
+        const res = await fetch('/api/delete', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: item.id,
+            user_id: currentUser.id,
+          }),
+        });
+        if (res.ok) {
+          successCount++;
+        }
+      } catch (err) {
+        console.error(`Failed to delete item ${item.id}:`, err);
+      }
+    }
+    if (successCount > 0) {
+      showToast('success', `${successCount} 件の過去の予定をデータベースから削除しました。`);
+      setExpiredFutureSchedules([]);
+      handleSearch();
+      fetchTags();
+      fetchCalendarEntries();
+    } else {
+      showToast('error', '削除に失敗しました。');
+    }
+  };
+
+  const handleCloseExpiredSchedulesModal = () => {
+    const ids = expiredFutureSchedules.map((item) => item.id);
+    setDismissedPastSchedules((prev) => [...prev, ...ids]);
+    setExpiredFutureSchedules([]);
   };
 
   const handleRecompileEntry = async (id: string) => {
@@ -3480,6 +3598,116 @@ create index if not exists idx_memory_entries_category on memory_entries (user_i
                   className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold transition-all cursor-pointer"
                 >
                   閉じる
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Expired Future Schedules Modal */}
+      <AnimatePresence>
+        {expiredFutureSchedules.length > 0 && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-2xl max-w-xl w-full flex flex-col shadow-2xl border border-slate-200 overflow-hidden"
+            >
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-lg bg-rose-50 flex items-center justify-center border border-rose-100">
+                    <CalendarDays className="h-4 w-4 text-rose-600 animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">過去の予定の整理・確認</h3>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      未来の予定として作成され、日付が過去になった事項が {expiredFutureSchedules.length} 件あります。
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCloseExpiredSchedulesModal}
+                  className="p-1.5 hover:bg-slate-200 text-slate-400 hover:text-slate-600 rounded-lg transition-colors cursor-pointer"
+                  title="閉じる"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 overflow-y-auto max-h-[50vh] space-y-3">
+                <p className="text-xs text-slate-600">
+                  以下の予定はすでに設定された日時を過ぎています。データベースから削除して整理しますか？
+                </p>
+                <div className="space-y-2.5">
+                  {expiredFutureSchedules.map((entry) => {
+                    return (
+                      <div
+                        key={entry.id}
+                        className="p-4 bg-slate-50 border border-slate-100 rounded-xl flex items-start justify-between gap-4 hover:bg-slate-100/50 transition-colors"
+                      >
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-rose-800 bg-rose-100/80 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                              {entry.category.toUpperCase()}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              予定日: {entry.occurred_at ? new Date(entry.occurred_at).toLocaleDateString('ja-JP') : '不明'}
+                            </span>
+                          </div>
+                          <h4 className="text-xs font-semibold text-slate-800 leading-relaxed">
+                            {entry.summary}
+                          </h4>
+                          {entry.raw_input && (
+                            <p className="text-[11px] text-slate-500 line-clamp-1 italic">
+                              "{entry.raw_input}"
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteExpiredSchedule(entry.id)}
+                            className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 rounded-lg border border-rose-100 transition-colors cursor-pointer"
+                            title="この予定を削除する"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleKeepExpiredSchedule(entry.id)}
+                            className="p-2 bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-700 rounded-lg border border-slate-200 transition-colors cursor-pointer"
+                            title="削除せず残す"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/50 gap-3">
+                <button
+                  type="button"
+                  onClick={handleKeepAllExpiredSchedules}
+                  className="px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold transition-all active:scale-95 cursor-pointer"
+                >
+                  すべて削除せず残す
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteAllExpiredSchedules}
+                  className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer flex items-center gap-1.5"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  すべてデータベースから削除
                 </button>
               </div>
             </motion.div>
