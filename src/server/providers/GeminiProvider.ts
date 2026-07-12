@@ -114,7 +114,7 @@ export class GeminiProvider extends BaseProvider {
         tags: {
           type: Type.ARRAY,
           items: { type: Type.STRING },
-          description: "Array of 1 to 4 relevant tags in Japanese. If the input is related to physical or mental health/mental health status, ALWAYS include 'お悩み' and 'テモテ観察中' in the tags. If the input is related to a future schedule, appointment, meeting, or online event (e.g., '7月21日朝にブラジル担当者とのオンライン会議予定'), ALWAYS include 'テモテのカレンダー' in the tags. Avoid duplicates.",
+          description: "Array of 1 to 4 relevant tags in Japanese. If the input is related to physical or mental health/mental health status, ALWAYS include 'お悩み' and 'ノアのお悩み相談' in the tags. If the input is related to a future schedule, appointment, meeting, or online event (e.g., '7月21日朝にブラジル担当者とのオンライン会議予定'), ALWAYS include 'テモテのカレンダー' in the tags. Avoid duplicates.",
         },
         importance: {
           type: Type.INTEGER,
@@ -130,7 +130,7 @@ export class GeminiProvider extends BaseProvider {
         },
         task_explanation: {
           type: Type.STRING,
-          description: "A short explanation in Japanese explaining how Timothy the AI can execute this task, or why it requires the user's personal action. If it is a health/mental health worry, explain how Secretary Timothy (秘書テモテ) will gently monitor and support the user.",
+          description: "A short explanation in Japanese explaining how Timothy the AI can execute this task, or why it requires the user's personal action. If it is a health/mental health worry, explain how Counselor Noah (カウンセラー・ノア) will gently monitor, listen, and support the user.",
         },
       },
       required: ['category', 'summary', 'entities', 'occurred_at', 'tags', 'importance', 'action_required', 'is_ai_executable', 'task_explanation'],
@@ -144,12 +144,12 @@ Reference datetime to resolve relative date indicators: ${todayStr}
 CRITICAL REQUIREMENT: If the input is related to physical health, mental health, stress, fatigue, mood, anxiety, or somatic worries, make sure to:
 - Set 'category' to 'health'.
 - Set 'importance' to 5.
-- Ensure the 'tags' array contains "お悩み" and "テモテ観察中".
+- Ensure the 'tags' array contains "お悩み" and "ノアのお悩み相談".
 
 Natural language raw input:
 "${rawInput}"`,
         config: {
-          systemInstruction: 'You are Ruka\'s Memory Gateway Engine. You specialize in compiling unstructured voice and text logs into highly precise, structured schemas. Strictly output JSON conforming to the schema. Ensure Category is exactly one of the eight specified categories. Emphasize physical and mental health inputs as highest importance (5) with "お悩み" and "テモテ観察中" tags.',
+          systemInstruction: 'You are Ruka\'s Memory Gateway Engine. You specialize in compiling unstructured voice and text logs into highly precise, structured schemas. Strictly output JSON conforming to the schema. Ensure Category is exactly one of the eight specified categories. Emphasize physical and mental health inputs as highest importance (5) with "お悩み" and "ノアのお悩み相談" tags.',
           responseMimeType: 'application/json',
           responseSchema: responseSchema,
         },
@@ -238,7 +238,7 @@ ${contextText || '該当する記録が見つかりませんでした。'}
       const response = await this.generateWithRetryAndFallback({
         contents: prompt,
         config: {
-          systemInstruction: 'You are Ruka (ルカ), an AI Companion and Shared Memory Compiler. Synthesize the provided historical logs to answer the user\'s natural language query truthfully and concisely in Japanese. Use Markdown for layout if appropriate. Crucially, if the historical logs contain health-related items or physical/mental worries (especially those flagged with "お悩み" or "テモテ観察中"), include a warm, empathetic commentary or message from "Secretary Timothy (秘書テモテ)" at the end or embedded nicely, showing that Timothy is closely observing, caring for, and ready to support the user\'s wellbeing and task adjustments.',
+          systemInstruction: 'You are Ruka (ルカ), an AI Companion and Shared Memory Compiler. Synthesize the provided historical logs to answer the user\'s natural language query truthfully and concisely in Japanese. Use Markdown for layout if appropriate. Crucially, if the historical logs contain health-related items or physical/mental worries (especially those flagged with "お悩み" or "ノアのお悩み相談"), include a warm, empathetic commentary or message from "Counselor Noah (カウンセラー・ノア)" at the end or embedded nicely, showing that Noah is closely listening, caring for, and ready to support the user\'s emotional wellbeing and peace, while "Secretary Timothy (秘書テモテ)" handles technology management and dynamic schedules.',
         },
       });
 
