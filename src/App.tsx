@@ -1646,7 +1646,7 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
         {/* Supabase Table Missing or Schema Mismatch Alert */}
-        {systemStatus.db_mode === 'supabase' && systemStatus.table_status && (!systemStatus.table_status.exists || systemStatus.table_status.error === 'schema_invalid_user_id_uuid') && (
+        {systemStatus.db_mode === 'supabase' && systemStatus.table_status && !systemStatus.table_status.exists && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1658,23 +1658,13 @@ export default function App() {
               </div>
               <div className="flex-1 space-y-3">
                 <h3 className="text-sm font-bold text-amber-900">
-                  {systemStatus.table_status.error === 'schema_invalid_user_id_uuid' 
-                    ? '【重要】Supabase の user_id 列のデータ型修正が必要です' 
-                    : '【重要】Supabase のテーブル設定が必要です'}
+                  【重要】Supabase のテーブル設定が必要です
                 </h3>
                 <p className="text-xs text-amber-800 leading-relaxed">
-                  {systemStatus.table_status.error === 'schema_invalid_user_id_uuid' ? (
-                    <span>
-                      Supabase内に <code>memory_entries</code> テーブルは存在しますが、<code>user_id</code> 列が <code>uuid</code> 型になっています。
-                      本アプリは UUID 形式のプロファイル ID を使用することで、テーブル定義が <code>uuid</code> 型であっても <code>text</code> 型であっても正常に動作するように最適化されています。
-                      安全のためにデータベース再接続や再確認を行ってください。
-                    </span>
-                  ) : (
-                    <span>
-                      Supabaseへの接続には成功していますが、データを格納するための <code>memory_entries</code> テーブルがデータベースに作成されていません。
-                      そのため、現在は自動的に<strong>ローカル保存モード（データ損失を防ぐための一時保存）</strong>にフォールバックして動作しています。
-                    </span>
-                  )}
+                  <span>
+                    Supabaseへの接続には成功していますが、データを格納するための <code>memory_timeline_events</code> テーブルがデータベースに作成されていません。
+                    そのため、現在は自動的に<strong>ローカル保存モード（データ損失を防ぐための一時保存）</strong>にフォールバックして動作しています。
+                  </span>
                 </p>
 
                 <div className="text-xs text-amber-900 font-medium pt-1">
@@ -1682,83 +1672,84 @@ export default function App() {
                 </div>
 
                 {/* SQL Codeblock Selection */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                <div className="grid grid-cols-1 gap-4 mt-2">
                   <div className="space-y-2">
                     <div className="text-xs font-bold text-slate-700 flex justify-between items-center">
-                      <span>方法A: 既存テーブルの型を変更（データを保持）</span>
-                      <button
-                        onClick={() => {
-                          const sql = `alter table memory_entries alter column user_id type text;`;
-                          navigator.clipboard.writeText(sql);
-                          showToast('success', '方法AのSQLをコピーしました！');
-                        }}
-                        className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 text-[10px] font-semibold rounded transition-all active:scale-95"
-                      >
-                        コピー
-                      </button>
-                    </div>
-                    <pre className="p-3 bg-slate-900 text-slate-100 rounded-xl text-[11px] font-mono overflow-x-auto leading-relaxed border border-slate-800 min-h-[80px]">
-{`-- user_idカラムの型をuuidからtextに変更
-alter table memory_entries 
-  alter column user_id type text;`}
-                    </pre>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="text-xs font-bold text-slate-700 flex justify-between items-center">
-                      <span>方法B: テーブルを再作成（データをリセット）</span>
+                      <span>SQL: memory_timeline_events テーブルの作成</span>
                       <button
                         onClick={() => {
                           const sql = `-- テーブルを一度削除して再作成
-drop table if exists memory_entries cascade;
+drop table if exists memory_timeline_events cascade;
 
-create table memory_entries (
+create table memory_timeline_events (
   id uuid primary key default gen_random_uuid(),
-  user_id text not null,
-  raw_input text not null,
-  input_type text not null check (input_type in ('voice','text')),
-  category text,
+  source_id uuid not null,
+  order_no integer not null unique,
+  era text,
+  year_label text,
+  year integer,
+  month integer,
+  day integer,
+  approximate_date boolean default false,
+  event_date text,
+  header_date_text text,
+  title text,
+  primary_category text,
+  categories text[] default '{}',
+  locations text[] default '{}',
+  scripture_refs text[] default '{}',
   summary text,
-  structured jsonb not null,
-  tags text[] default '{}',
-  search_text text not null,
-  importance smallint default 3,
-  occurred_at timestamptz,
-  created_at timestamptz default now()
+  body text,
+  raw_header text,
+  raw_text text,
+  meta jsonb not null default '{}',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
-create index if not exists idx_memory_entries_user on memory_entries (user_id);
-create index if not exists idx_memory_entries_category on memory_entries (user_id, category);`;
+create index if not exists idx_memory_timeline_events_date on memory_timeline_events (event_date);
+create index if not exists idx_memory_timeline_events_primary_category on memory_timeline_events (primary_category);`;
                           navigator.clipboard.writeText(sql);
-                          showToast('success', '方法BのSQLをコピーしました！');
+                          showToast('success', 'テーブル作成SQLをコピーしました！');
                         }}
                         className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 text-[10px] font-semibold rounded transition-all active:scale-95"
                       >
                         コピー
                       </button>
                     </div>
-                    <pre className="p-3 bg-slate-900 text-slate-100 rounded-xl text-[11px] font-mono overflow-x-auto max-h-40 leading-relaxed border border-slate-800">
+                    <pre className="p-3 bg-slate-900 text-slate-100 rounded-xl text-[11px] font-mono overflow-x-auto max-h-60 leading-relaxed border border-slate-800">
 {`-- 1. テーブルを完全に再作成
-drop table if exists memory_entries cascade;
+drop table if exists memory_timeline_events cascade;
 
-create table memory_entries (
+create table memory_timeline_events (
   id uuid primary key default gen_random_uuid(),
-  user_id text not null,
-  raw_input text not null,
-  input_type text not null check (input_type in ('voice','text')),
-  category text,
+  source_id uuid not null,
+  order_no integer not null unique,
+  era text,
+  year_label text,
+  year integer,
+  month integer,
+  day integer,
+  approximate_date boolean default false,
+  event_date text,
+  header_date_text text,
+  title text,
+  primary_category text,
+  categories text[] default '{}',
+  locations text[] default '{}',
+  scripture_refs text[] default '{}',
   summary text,
-  structured jsonb not null,
-  tags text[] default '{}',
-  search_text text not null,
-  importance smallint default 3,
-  occurred_at timestamptz,
-  created_at timestamptz default now()
+  body text,
+  raw_header text,
+  raw_text text,
+  meta jsonb not null default '{}',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
 -- 2. 検索用のインデックス作成
-create index if not exists idx_memory_entries_user on memory_entries (user_id);
-create index if not exists idx_memory_entries_category on memory_entries (user_id, category);`}
+create index if not exists idx_memory_timeline_events_date on memory_timeline_events (event_date);
+create index if not exists idx_memory_timeline_events_primary_category on memory_timeline_events (primary_category);`}
                     </pre>
                   </div>
                 </div>

@@ -221,43 +221,24 @@ export class MemoryGatewayDb {
     return this.isPublicTableVerified;
   }
 
-  // Check if the memory_entries table is correctly provisioned
+  // Check if the memory_timeline_events table is correctly provisioned
   async checkTableStatus(): Promise<{ exists: boolean; error: string | null; isSchemaValid?: boolean }> {
     if (!this.supabase) {
       return { exists: false, error: 'Supabase client not initialized', isSchemaValid: false };
     }
     try {
-      // 1. Verify table exists by requesting 1 ID
       const { error: existError } = await this.supabase
-        .from('memory_entries')
+        .from('memory_timeline_events')
         .select('id')
         .limit(1);
 
       if (existError) {
-        console.error('Supabase table status check returned error:', existError.message, 'Code:', existError.code, 'Details:', existError.details);
+        console.error('Supabase timeline events check returned error:', existError.message);
         if (existError.code === '42P01') {
           this.isTableVerified = false;
           return { exists: false, error: 'table_missing', isSchemaValid: false };
         }
         return { exists: false, error: existError.message, isSchemaValid: false };
-      }
-
-      // 2. Verify schema (user_id type) by selecting with a valid UUID format
-      const { error: schemaError } = await this.supabase
-        .from('memory_entries')
-        .select('id')
-        .eq('user_id', '00000000-0000-0000-0000-000000000001')
-        .limit(1);
-
-      if (schemaError) {
-        console.error('Supabase schema verification returned error:', schemaError.message, 'Code:', schemaError.code, 'Details:', schemaError.details);
-        if (schemaError.code === '22P02') {
-          // This means user_id is of type uuid instead of text!
-          this.isTableVerified = false; // Force fallback to local to avoid crashes
-          return { exists: true, error: 'schema_invalid_user_id_uuid', isSchemaValid: false };
-        }
-        this.isTableVerified = false;
-        return { exists: true, error: schemaError.message, isSchemaValid: false };
       }
 
       this.isTableVerified = true;
@@ -268,41 +249,195 @@ export class MemoryGatewayDb {
     }
   }
 
+  // Helper to map timeline event row back to MemoryEntry
+  private mapTimelineEventToEntry(row: any): MemoryEntry {
+    if (row.meta && row.meta.id && row.meta.raw_input) {
+      return row.meta as MemoryEntry;
+    }
+    const category = row.primary_category === '宣教活動' ? 'faith' : (row.primary_category === '健康管理' ? 'health' : 'other');
+    return {
+      id: row.id,
+      user_id: row.meta?.user_id || '00000000-0000-0000-0000-000000000001',
+      raw_input: row.body || row.raw_text || row.summary || '',
+      input_type: row.meta?.input_type || 'text',
+      category: category,
+      summary: row.title || row.summary || '無題の記録',
+      structured: {
+        category: category,
+        summary: row.title || row.summary || '無題の記録',
+        entities: {
+          people: [],
+          places: row.locations || [],
+          dates: [row.event_date || '']
+        },
+        occurred_at: row.event_date ? new Date(row.event_date).toISOString() : null,
+        tags: row.categories || [],
+        importance: row.meta?.importance || 3,
+        action_required: false
+      },
+      tags: row.categories || [],
+      search_text: `${row.title} ${row.body} ${row.summary} ${(row.categories || []).join(' ')}`.toLowerCase(),
+      importance: row.meta?.importance || 3,
+      occurred_at: row.event_date ? new Date(row.event_date).toISOString() : null,
+      created_at: row.created_at || new Date().toISOString()
+    };
+  }
+
+  // Helper to fetch max order_no from memory_timeline_events
+  private async getNextOrderNo(): Promise<number> {
+    if (!this.supabase) return 1;
+    try {
+      const { data, error } = await this.supabase
+        .from('memory_timeline_events')
+        .select('order_no')
+        .order('order_no', { ascending: false })
+        .limit(1);
+      if (error) {
+        console.error('Failed to fetch next order_no:', error);
+        return 1;
+      }
+      return data && data.length > 0 ? (data[0].order_no || 0) + 1 : 1;
+    } catch (err) {
+      console.error('Error fetching max order_no:', err);
+      return 1;
+    }
+  }
+
+  // Helper to convert MemoryEntry to timeline event row
+  private async mapEntryToTimelineEventRow(entry: MemoryEntry, orderNo?: number) {
+    const pubDate = new Date(entry.occurred_at || entry.created_at);
+    const eventDateStr = (entry.occurred_at || entry.created_at).substring(0, 10);
+    
+    const year = pubDate.getFullYear();
+    const month = pubDate.getMonth() + 1;
+    const day = pubDate.getDate();
+    const yearLabel = `${year}年`;
+    const headerDateText = `${year}年${month}月${day}日`;
+
+    let summary = entry.summary || '';
+    if (summary.length > 150) {
+      summary = summary.substring(0, 150) + '...';
+    }
+
+    const categories = entry.tags && entry.tags.length > 0 
+      ? [...new Set([entry.category, ...entry.tags])] 
+      : [entry.category];
+
+    const actualOrderNo = orderNo !== undefined ? orderNo : await this.getNextOrderNo();
+
+    const meta = {
+      ...entry,
+      source: 'ルカ・ゲートウェイ',
+      import_date: new Date().toISOString()
+    };
+
+    return {
+      id: entry.id,
+      source_id: '00000000-0000-0000-0000-000000000000', // registered "ルカ・ゲートウェイ" source
+      order_no: actualOrderNo,
+      era: yearLabel,
+      year_label: yearLabel,
+      year: year,
+      month: month,
+      day: day,
+      approximate_date: false,
+      event_date: eventDateStr,
+      header_date_text: headerDateText,
+      title: entry.summary,
+      primary_category: entry.category === 'faith' ? '宣教活動' : (entry.category === 'health' ? '健康管理' : '一般メモ'),
+      categories: categories,
+      locations: entry.structured?.entities?.places || [],
+      scripture_refs: [],
+      summary: summary,
+      body: entry.raw_input,
+      raw_header: `${headerDateText} ${entry.summary}`,
+      raw_text: `${headerDateText} ${entry.summary}\n\n${entry.raw_input}`,
+      meta: meta,
+      created_at: entry.created_at,
+      updated_at: new Date().toISOString()
+    };
+  }
+
+  // Helper to upsert a hippocampus log
+  private async insertOrUpdateHippocampusLog(entry: MemoryEntry): Promise<void> {
+    if (!this.supabase) return;
+    try {
+      const createdTime = new Date(entry.created_at).getTime();
+      const contentObj = {
+        id: entry.id,
+        createdTime: createdTime,
+        original: {
+          transcription: entry.raw_input,
+          manualNote: entry.summary || '',
+          tags: entry.tags || [],
+          datetime: entry.occurred_at || entry.created_at,
+          isImported: true,
+          emotions: []
+        },
+        aiData: {
+          summary: entry.summary || '',
+          analysisStr: entry.raw_input,
+          emotion: '穏やか',
+          emotionColor: '#FAF9F5',
+          catComment: entry.structured?.task_explanation || 'ルカによってコンパイルされた長期記憶にゃ🐾',
+          reflectiveQuestion: 'この記録を振り返って、どのような祝福や気づきがありましたかにゃ？'
+        }
+      };
+
+      const logRecord = {
+        id: entry.id,
+        user_id: 'usr_shalom777', // Default user matched to existing hippocampus_logs
+        entry_type: 'log',
+        content: JSON.stringify(contentObj),
+        received_from: 'app',
+        occurred_at: entry.occurred_at || entry.created_at,
+        created_at: entry.created_at || new Date().toISOString()
+      };
+
+      const { error } = await this.supabase
+        .from('hippocampus_logs')
+        .upsert(logRecord, { onConflict: 'id' });
+
+      if (error) {
+        console.error('Failed to upsert to hippocampus_logs:', error);
+      } else {
+        console.log(`Successfully saved/updated high importance entry [${entry.id}] to hippocampus_logs.`);
+      }
+    } catch (err) {
+      console.error('Exception during hippocampus log upsert:', err);
+    }
+  }
+
   // Insert a new memory entry
   async insertEntry(entry: MemoryEntry): Promise<void> {
     const tableExists = await this.ensureTableExists();
-    // Rule: Save to Supabase if category is 'faith' OR (category is NOT 'task' AND importance >= 4) OR is GitHub sync/repo memory
-    const isBrainLibraryItem =
-      entry.category === 'faith' ||
-      (entry.category !== 'task' && entry.importance >= 4) ||
-      (entry.tags && (entry.tags.includes('github') || entry.tags.includes('repository')));
 
-    if (this.mode === 'supabase' && this.supabase && tableExists && isBrainLibraryItem) {
-      console.log(`Saving Brain Library item [${entry.category}] with importance [${entry.importance}] to Supabase...`);
-      const { error } = await this.supabase
-        .from('memory_entries')
-        .insert({
-          id: entry.id,
-          user_id: entry.user_id,
-          raw_input: entry.raw_input,
-          input_type: entry.input_type,
-          category: entry.category,
-          summary: entry.summary,
-          structured: entry.structured,
-          tags: entry.tags,
-          search_text: entry.search_text,
-          importance: entry.importance,
-          occurred_at: entry.occurred_at,
-          created_at: entry.created_at
-        });
+    if (this.mode === 'supabase' && this.supabase && tableExists) {
+      console.log(`Saving entry [${entry.category}] with importance [${entry.importance}] to Supabase memory_timeline_events...`);
+      try {
+        const orderNo = await this.getNextOrderNo();
+        const mappedRow = await this.mapEntryToTimelineEventRow(entry, orderNo);
+        const { error } = await this.supabase
+          .from('memory_timeline_events')
+          .insert(mappedRow);
 
-      if (error) {
-        console.error('Supabase insert failed. Error details:', error);
-        console.log('Falling back to local storage for this insert to prevent data loss...');
+        if (error) {
+          console.error('Supabase timeline events insert failed. Error details:', error);
+          console.log('Falling back to local storage for this insert to prevent data loss...');
+          this.insertEntryLocally(entry);
+        } else {
+          console.log(`Successfully saved entry to Supabase memory_timeline_events with order_no: ${orderNo}`);
+          // Put to hippocampus_logs if importance >= 4 ("高" or higher)
+          if (entry.importance >= 4) {
+            await this.insertOrUpdateHippocampusLog(entry);
+          }
+        }
+      } catch (err: any) {
+        console.error('Supabase insert exception:', err);
         this.insertEntryLocally(entry);
       }
     } else {
-      console.log(`Saving standard item [${entry.category}] with importance [${entry.importance}] to local database...`);
+      console.log(`Saving entry [${entry.category}] with importance [${entry.importance}] to local database...`);
       this.insertEntryLocally(entry);
     }
   }
@@ -325,11 +460,10 @@ export class MemoryGatewayDb {
     if (this.mode === 'supabase' && this.supabase && tableExists) {
       try {
         await this.supabase
-          .from('memory_entries')
+          .from('memory_timeline_events')
           .delete()
-          .eq('id', id)
-          .eq('user_id', user_id);
-        console.log(`Successfully deleted entry [${id}] from Supabase.`);
+          .eq('id', id);
+        console.log(`Successfully deleted entry [${id}] from memory_timeline_events.`);
       } catch (err: any) {
         console.error('Supabase delete failed:', err?.message || err);
       }
@@ -353,15 +487,26 @@ export class MemoryGatewayDb {
     const tableExists = await this.ensureTableExists();
     if (this.mode === 'supabase' && this.supabase && tableExists) {
       try {
-        const { error } = await this.supabase
-          .from('memory_entries')
-          .update(updatedFields)
-          .eq('id', id)
-          .eq('user_id', user_id);
-        if (!error) {
-          updatedSupabase = true;
-        } else {
-          console.error('Supabase update failed:', error);
+        const existing = await this.getEntryById(id);
+        if (existing) {
+          const mergedEntry = { ...existing, ...updatedFields };
+          const mappedRow = await this.mapEntryToTimelineEventRow(mergedEntry);
+
+          const { error } = await this.supabase
+            .from('memory_timeline_events')
+            .update(mappedRow)
+            .eq('id', id);
+
+          if (!error) {
+            updatedSupabase = true;
+
+            // If updated/new importance is High or higher, update in hippocampus_logs too!
+            if (mergedEntry.importance >= 4) {
+              await this.insertOrUpdateHippocampusLog(mergedEntry);
+            }
+          } else {
+            console.error('Supabase update failed:', error);
+          }
         }
       } catch (err: any) {
         console.error('Supabase update exception:', err?.message || err);
@@ -384,7 +529,7 @@ export class MemoryGatewayDb {
     if (this.mode === 'supabase' && this.supabase && tableExists) {
       try {
         const { data, error } = await this.supabase
-          .from('memory_entries')
+          .from('memory_timeline_events')
           .select('*')
           .eq('id', id)
           .maybeSingle();
@@ -392,7 +537,9 @@ export class MemoryGatewayDb {
         if (error) {
           throw error;
         }
-        return data as MemoryEntry | null;
+        if (data) {
+          return this.mapTimelineEventToEntry(data);
+        }
       } catch (err: any) {
         console.error('Supabase query by ID failed:', err?.message || err);
       }
@@ -407,29 +554,40 @@ export class MemoryGatewayDb {
     if (this.mode === 'supabase' && this.supabase && tableExists) {
       try {
         let query = this.supabase
-          .from('memory_entries')
-          .select('*')
-          .eq('user_id', filters.user_id);
+          .from('memory_timeline_events')
+          .select('*');
 
         if (filters.category && filters.category !== 'all') {
-          query = query.eq('category', filters.category);
+          const mappedCat = filters.category === 'faith' ? '宣教活動' : (filters.category === 'health' ? '健康管理' : null);
+          if (mappedCat) {
+            query = query.eq('primary_category', mappedCat);
+          }
         }
 
         if (filters.date_from) {
-          query = query.gte('occurred_at', filters.date_from);
+          query = query.gte('event_date', filters.date_from.substring(0, 10));
         }
 
         if (filters.date_to) {
-          query = query.lte('occurred_at', filters.date_to);
+          query = query.lte('event_date', filters.date_to.substring(0, 10));
         }
 
-        const { data, error } = await query.order('occurred_at', { ascending: false });
+        const { data, error } = await query;
 
         if (error) {
           throw error;
         }
 
-        let results = (data as MemoryEntry[]) || [];
+        let results = (data || []).map(row => this.mapTimelineEventToEntry(row));
+
+        if (filters.user_id) {
+          results = results.filter(entry => 
+            !entry.user_id || 
+            entry.user_id === filters.user_id || 
+            filters.user_id === '00000000-0000-0000-0000-000000000001' ||
+            entry.user_id === '00000000-0000-0000-0000-000000000001'
+          );
+        }
 
         // Apply Tag Filter and Text Query search filter if needed
         if (filters.tags && filters.tags.length > 0) {
@@ -523,16 +681,15 @@ export class MemoryGatewayDb {
     if (this.mode === 'supabase' && this.supabase && tableExists) {
       try {
         const { data, error } = await this.supabase
-          .from('memory_entries')
-          .select('tags')
-          .eq('user_id', user_id);
+          .from('memory_timeline_events')
+          .select('categories');
 
         if (error) throw error;
 
         const allTags = new Set<string>(localTags);
-        data?.forEach((row: { tags: string[] }) => {
-          if (row.tags) {
-            row.tags.forEach((tag) => allTags.add(tag));
+        data?.forEach((row: { categories: string[] }) => {
+          if (row.categories) {
+            row.categories.forEach((tag) => allTags.add(tag));
           }
         });
         return Array.from(allTags);
