@@ -2295,7 +2295,8 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                       value={
                         targetSupabaseTable === 'memory_timeline_events' ||
                         targetSupabaseTable === 'hippocampus_logs' ||
-                        targetSupabaseTable === 'memories'
+                        targetSupabaseTable === 'memories' ||
+                        targetSupabaseTable === 'save_noah_session_summary'
                           ? targetSupabaseTable
                           : 'custom_table_input'
                       }
@@ -2312,12 +2313,14 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                       <option value="memory_timeline_events">memory_timeline_events (標準: タイムライン)</option>
                       <option value="hippocampus_logs">hippocampus_logs (海馬ログ記憶)</option>
                       <option value="memories">memories (公開共有記憶)</option>
+                      <option value="save_noah_session_summary">save_noah_session_summary (ノア相談セッション要約)</option>
                       <option value="custom_table_input">-- 直接テーブル名を指定する --</option>
                     </select>
                   </div>
                   {targetSupabaseTable !== 'memory_timeline_events' &&
                    targetSupabaseTable !== 'hippocampus_logs' &&
-                   targetSupabaseTable !== 'memories' && (
+                   targetSupabaseTable !== 'memories' &&
+                   targetSupabaseTable !== 'save_noah_session_summary' && (
                     <div className="pt-1 animate-in fade-in duration-200">
                       <input
                         type="text"

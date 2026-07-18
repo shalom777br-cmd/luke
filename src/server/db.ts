@@ -432,6 +432,42 @@ export class MemoryGatewayDb {
         return;
       }
 
+      if (selectedTable === 'save_noah_session_summary') {
+        console.log(`Saving entry directly to Supabase save_noah_session_summary...`);
+        try {
+          const payload = {
+            id: entry.id,
+            content: entry.raw_input,
+            category: entry.category,
+            source: 'ルカ・ゲートウェイ',
+            importance: entry.importance || 3,
+            occurred_at: entry.occurred_at || entry.created_at || new Date().toISOString(),
+            created_at: entry.created_at || new Date().toISOString(),
+            related_to: [] as string[]
+          };
+
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (!uuidRegex.test(payload.id)) {
+            delete (payload as any).id;
+          }
+
+          const { error } = await this.supabase
+            .from('save_noah_session_summary')
+            .insert(payload);
+
+          if (error) {
+            console.error('Supabase save_noah_session_summary insert failed. Error:', error);
+            this.insertEntryLocally(entry);
+          } else {
+            console.log('Successfully saved entry to Supabase save_noah_session_summary!');
+          }
+        } catch (err: any) {
+          console.error('Supabase save_noah_session_summary insert exception:', err);
+          this.insertEntryLocally(entry);
+        }
+        return;
+      }
+
       // Default or custom table
       const isDefaultTable = selectedTable === 'memory_timeline_events';
       const isCustomTable = !isDefaultTable;
