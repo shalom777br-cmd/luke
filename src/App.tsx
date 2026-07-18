@@ -2322,6 +2322,12 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
               )}
             </div>
 
+            {/* Noah's Counseling Room */}
+            <NoahCounseling
+              userId={currentUser.id}
+              showToast={(msg, type) => showToast(type, msg)}
+            />
+
             <SharedMemorySearch
               activeSearchTab={activeSearchTab}
               setActiveSearchTab={setActiveSearchTab}
@@ -2842,12 +2848,6 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                 )}
               </div>
             </div>
-
-            {/* Noah's Counseling Room */}
-            <NoahCounseling
-              userId={currentUser.id}
-              showToast={(msg, type) => showToast(type, msg)}
-            />
 
           </section>
 
