@@ -1854,23 +1854,23 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
           {/* Left Side Panel - Ingestion (4 cols) */}
-          <section className="lg:col-span-5 space-y-6">
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs relative overflow-hidden">
+          <section className="lg:col-span-5 space-y-5">
+            <div className="bg-white rounded-2xl border border-slate-200 p-4.5 shadow-xs relative overflow-hidden">
               
               {/* Decorative Accent Ring */}
-              <div className="absolute top-0 right-0 h-28 w-28 bg-teal-500/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />
+              <div className="absolute top-0 right-0 h-24 w-24 bg-teal-500/5 rounded-full blur-xl -mr-8 -mt-8 pointer-events-none" />
 
-              <div className="flex items-center gap-2.5 mb-5 border-b border-slate-100 pb-4">
-                <Sparkles className="h-5 w-5 text-teal-600" />
-                <h2 className="text-base font-bold text-slate-900">自然言語 記憶投入ゲートウェイ</h2>
+              <div className="flex items-center gap-2 mb-3.5 border-b border-slate-100 pb-2.5">
+                <Sparkles className="h-4.5 w-4.5 text-teal-600" />
+                <h2 className="text-sm font-bold text-slate-900">自然言語 記憶投入ゲートウェイ</h2>
               </div>
 
               {/* Tab Selector for Ingest Mode vs Question Mode */}
-              <div className="flex rounded-xl bg-slate-100 p-1 border border-slate-200 text-xs mb-5">
+              <div className="flex rounded-lg bg-slate-100 p-0.5 border border-slate-200 text-xs mb-3.5">
                 <button
                   type="button"
                   onClick={() => setActiveGatewayTab('ingest')}
-                  className={`flex-1 py-2 rounded-lg transition-all font-semibold flex items-center justify-center gap-1.5 ${activeGatewayTab === 'ingest' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                  className={`flex-1 py-1.5 rounded-md transition-all font-semibold flex items-center justify-center gap-1.5 ${activeGatewayTab === 'ingest' ? 'bg-white text-teal-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
                 >
                   <Sparkles className="h-3.5 w-3.5" />
                   <span>記憶を記録 (インプット)</span>
@@ -1878,7 +1878,7 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                 <button
                   type="button"
                   onClick={() => setActiveGatewayTab('ask')}
-                  className={`flex-1 py-2 rounded-lg transition-all font-semibold flex items-center justify-center gap-1.5 ${activeGatewayTab === 'ask' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                  className={`flex-1 py-1.5 rounded-md transition-all font-semibold flex items-center justify-center gap-1.5 ${activeGatewayTab === 'ask' ? 'bg-white text-teal-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
                 >
                   <Search className="h-3.5 w-3.5" />
                   <span>記憶に問いかける (質問)</span>
@@ -1887,23 +1887,23 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
 
               {activeGatewayTab === 'ask' ? (
                 /* Ask Form (Question Mode) */
-                <form onSubmit={handleAskQuestion} className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-700 block">
+                <form onSubmit={handleAskQuestion} className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-slate-700 block">
                       質問内容を入力してください:
                     </label>
                     <div className="relative">
                       <textarea
-                        rows={4}
+                        rows={3}
                         value={askQuestion}
                         onChange={(e) => setAskQuestion(e.target.value)}
                         placeholder="例：テモテの開発ダッシュボードに同期したGitHubリポジトリに関する情報はある？"
-                        className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none transition-all placeholder:text-slate-400 bg-slate-50/50 resize-none leading-relaxed"
+                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none transition-all placeholder:text-slate-400 bg-slate-50/50 resize-none leading-relaxed"
                       />
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between pt-1">
+                  <div className="flex items-center justify-between pt-0.5">
                     <button
                       type="button"
                       onClick={() => {
@@ -1912,23 +1912,23 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                         setAskError(null);
                         showToast('info', '質問をクリアしました。');
                       }}
-                      className="text-xs text-slate-400 hover:text-slate-600 transition-colors font-medium"
+                      className="text-[11px] text-slate-400 hover:text-slate-600 transition-colors font-medium"
                     >
                       入力をクリア
                     </button>
                     <button
                       type="submit"
                       disabled={isAsking || !askQuestion.trim()}
-                      className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-medium text-sm flex items-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-teal-600/10 active:scale-98"
+                      className="px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-medium text-xs flex items-center gap-1.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-teal-600/10 active:scale-98"
                     >
                       {isAsking ? (
                         <>
-                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
                           <span>検索中...</span>
                         </>
                       ) : (
                         <>
-                          <Search className="h-4 w-4" />
+                          <Search className="h-3.5 w-3.5" />
                           <span>質問する</span>
                         </>
                       )}
@@ -1942,7 +1942,7 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                         initial={{ opacity: 0, y: 5 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 5 }}
-                        className="p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 font-medium"
+                        className="p-2.5 bg-red-50 border border-red-100 rounded-lg text-[11px] text-red-600 font-medium"
                       >
                         {askError}
                       </motion.div>
@@ -1952,28 +1952,28 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                       <motion.div
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="space-y-3 pt-2"
+                        className="space-y-2.5 pt-1.5"
                       >
-                        <div className="p-4 bg-teal-50/70 border border-teal-100 rounded-xl space-y-2">
+                        <div className="p-3 bg-teal-50/70 border border-teal-100 rounded-xl space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold text-teal-800 bg-teal-100 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                            <span className="text-[10px] font-bold text-teal-800 bg-teal-100 px-1.5 py-0.5 rounded-full uppercase tracking-wider">
                               🔍 問いかけの回答
                             </span>
                             {askResult.matchedKeyword && (
-                              <span className="text-[10px] font-bold text-teal-600 bg-teal-100/60 px-2 py-0.5 rounded-full">
-                                マッチしたキーワード: {askResult.matchedKeyword}
+                              <span className="text-[9px] font-bold text-teal-600 bg-teal-100/60 px-1.5 py-0.5 rounded-full">
+                                キーワード: {askResult.matchedKeyword}
                               </span>
                             )}
                           </div>
-                          <p className="text-sm font-semibold text-slate-900 leading-relaxed">
+                          <p className="text-xs font-semibold text-slate-900 leading-relaxed">
                             {askResult.answer}
                           </p>
                           {askResult.detail && (
                             <div className="pt-2 border-t border-teal-100/60">
-                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1">
+                              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide block mb-1">
                                 記憶の背景コンテキスト:
                               </span>
-                              <p className="text-xs text-slate-600 whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto bg-white/50 p-2.5 rounded border border-slate-100">
+                              <p className="text-[11px] text-slate-600 whitespace-pre-wrap leading-relaxed max-h-36 overflow-y-auto bg-white/50 p-2 rounded border border-slate-100">
                                 {askResult.detail}
                               </p>
                             </div>
@@ -1982,24 +1982,24 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
 
                         {/* Other Matches */}
                         {askResult.allMatches && askResult.allMatches.length > 1 && (
-                          <div className="space-y-1.5">
-                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
                               関連するその他の記憶 ({askResult.allMatches.length} 件):
                             </span>
-                            <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                            <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
                               {askResult.allMatches.slice(1).map((match, idx) => (
                                 <div
                                   key={idx}
-                                  className="p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs transition-all"
+                                  className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-[11px] transition-all"
                                 >
-                                  <div className="flex items-center justify-between font-bold text-slate-700 mb-1">
+                                  <div className="flex items-center justify-between font-bold text-slate-700 mb-0.5">
                                     <span>{match.year ? `${match.year}年の記録` : '関連の記録'}</span>
                                   </div>
-                                  <p className="text-slate-800 font-semibold mb-1">
+                                  <p className="text-slate-800 font-semibold mb-0.5">
                                     「{match.display_title || match.summary}」
                                   </p>
                                   {match.ai_context && (
-                                    <p className="text-slate-500 text-[11px] line-clamp-2">
+                                    <p className="text-slate-500 text-[10px] line-clamp-1">
                                       {match.ai_context}
                                     </p>
                                   )}
@@ -2014,23 +2014,23 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                 </form>
               ) : (
                 /* Ingest Form (Original Form) */
-                <form onSubmit={handleIngest} className="space-y-4">
+                <form onSubmit={handleIngest} className="space-y-3">
                 
                 {/* Method Toggles */}
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-slate-500">入力ソース種別:</span>
-                  <div className="flex rounded-lg bg-slate-100 p-0.5 border border-slate-200 text-xs">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-600">入力ソース種別:</span>
+                  <div className="flex rounded-lg bg-slate-100 p-0.5 border border-slate-200 text-[11px]">
                     <button
                       type="button"
                       onClick={() => setInputType('text')}
-                      className={`px-3 py-1 rounded-md transition-all ${inputType === 'text' ? 'bg-white text-slate-900 font-medium shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                      className={`px-2.5 py-1 rounded-md transition-all ${inputType === 'text' ? 'bg-white text-slate-900 font-semibold shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
                     >
                       テキスト入力
                     </button>
                     <button
                       type="button"
                       onClick={() => setInputType('voice')}
-                      className={`px-3 py-1 rounded-md transition-all ${inputType === 'voice' ? 'bg-white text-slate-900 font-medium shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                      className={`px-2.5 py-1 rounded-md transition-all ${inputType === 'voice' ? 'bg-white text-slate-900 font-semibold shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
                     >
                       音声ログ
                     </button>
@@ -2040,7 +2040,7 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                 {/* Main Textarea */}
                 <div className="relative">
                   <textarea
-                    rows={6}
+                    rows={4}
                     value={rawInput}
                     onChange={(e) => {
                       setRawInput(e.target.value);
@@ -2051,30 +2051,30 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                     }}
                     placeholder={
                       inputType === 'voice'
-                        ? "【音声ログ入力】\n下のマイクボタンを押してしゃべるか、iOSキーボードの音声入力キー(マイク)を押して、記憶や予定を声でそのまま吹き込んでください。"
-                        : "【自然言語テキスト】\n出来事やタスク、今日浮かんだひらめきなどを自由に入力してください。\n例：「明日15時に渋谷のカフェで高橋さんと打合せ。資料忘れずに。」"
+                        ? "【音声ログ入力】下のマイクボタンを押してしゃべるか、音声入力で吹き込んでください。"
+                        : "【テキスト】出来事やタスク、ひらめきなどを自由に入力してください。例：「明日15時に渋谷で打合せ。資料忘れずに。」"
                     }
-                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none transition-all placeholder:text-slate-400 bg-slate-50/50 resize-none leading-relaxed"
+                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none transition-all placeholder:text-slate-400 bg-slate-50/50 resize-none leading-relaxed"
                   />
 
                   {/* Absolute Microphone Overlay Helper */}
-                  <div className="absolute bottom-3 right-3 flex items-center gap-2">
+                  <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1.5">
                     {recognition ? (
                       <button
                         type="button"
                         onClick={handleToggleRecording}
-                        className={`p-2.5 rounded-full shadow-xs transition-all duration-300 flex items-center justify-center ${
+                        className={`p-2 rounded-full shadow-xs transition-all duration-300 flex items-center justify-center ${
                           isRecording
                             ? 'bg-red-500 hover:bg-red-600 text-white ring-4 ring-red-100 animate-pulse'
                             : 'bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-200'
                         }`}
                         title={isRecording ? '録音を停止' : 'マイク音声録音を開始'}
                       >
-                        {isRecording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                        {isRecording ? <Square className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
                       </button>
                     ) : (
-                      <div className="text-[10px] text-slate-400 bg-slate-100 px-2 py-1 rounded-md flex items-center gap-1.5 border border-slate-200">
-                        <Mic className="h-3 w-3" />
+                      <div className="text-[9px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md flex items-center gap-1 border border-slate-200">
+                        <Mic className="h-2.5 w-2.5" />
                         <span>音声キー推奨</span>
                       </div>
                     )}
@@ -2082,17 +2082,17 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                 </div>
 
                 {/* Collapsible Microphone & Noise Gate Settings */}
-                <div id="mic-settings-container" className="border border-slate-100 rounded-xl bg-slate-50/50 overflow-hidden">
+                <div id="mic-settings-container" className="border border-slate-100 rounded-lg bg-slate-50/50 overflow-hidden text-xs">
                   <button
                     type="button"
                     onClick={() => setShowMicSettings(!showMicSettings)}
-                    className="w-full px-3.5 py-2 flex items-center justify-between text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
+                    className="w-full px-3 py-1.5 flex items-center justify-between font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                       <Sliders className="h-3.5 w-3.5 text-teal-600" />
                       <span>マイク音声感度・ノイズしきい値調整</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1">
                       <span className="text-[10px] text-slate-400 font-normal">
                         感度: {micSensitivity}x / 閾値: {noiseThreshold}%
                       </span>
@@ -2110,14 +2110,14 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="px-3.5 pb-4 pt-1 border-t border-slate-100 space-y-3 text-xs overflow-hidden"
+                        transition={{ duration: 0.15 }}
+                        className="px-3 pb-3 pt-0.5 border-t border-slate-100 space-y-2.5 text-[11px] overflow-hidden"
                       >
                         {/* Meter (Always shown to help test mic levels) */}
-                        <div className="space-y-1.5 bg-white p-2.5 rounded-lg border border-slate-100 shadow-3xs">
-                          <div className="flex items-center justify-between text-[11px]">
+                        <div className="space-y-1 bg-white p-2 rounded-lg border border-slate-100 shadow-3xs">
+                          <div className="flex items-center justify-between text-[10px]">
                             <span className="text-slate-500 font-medium flex items-center gap-1">
-                              <Volume2 className="h-3.5 w-3.5 text-teal-500" />
+                              <Volume2 className="h-3 w-3 text-teal-500" />
                               リアルタイム入力音量レベル:
                             </span>
                             <span className="font-mono font-semibold text-slate-700">
@@ -2125,7 +2125,7 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                             </span>
                           </div>
                           
-                          <div className="relative h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className="relative h-1.5 bg-slate-100 rounded-full overflow-hidden">
                             {/* Threshold bar marker */}
                             <div 
                               className="absolute top-0 bottom-0 w-0.5 bg-red-400 z-20"
@@ -2142,22 +2142,20 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                               style={{ width: `${realtimeVolume}%` }}
                             />
                           </div>
-                          <div className="flex justify-between text-[9px] text-slate-400 font-mono">
+                          <div className="flex justify-between text-[8px] text-slate-400 font-mono">
                             <span>0%</span>
-                            <span className="text-red-500 font-medium" style={{ marginLeft: `${noiseThreshold - 10}%` }}>
-                              しきい値 ({noiseThreshold}%)
-                            </span>
+                            <span className="text-red-500 font-medium">しきい値 ({noiseThreshold}%)</span>
                             <span>100%</span>
                           </div>
                         </div>
 
                         {/* Sensitivity Slider */}
-                        <div className="space-y-1">
+                        <div className="space-y-0.5">
                           <div className="flex items-center justify-between">
                             <span className="font-medium text-slate-600">マイクゲイン (入力感度):</span>
                             <span className="font-mono font-bold text-teal-600">{micSensitivity.toFixed(1)}x</span>
                           </div>
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
                             <input
                               type="range"
                               min="0.1"
@@ -2165,23 +2163,20 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                               step="0.1"
                               value={micSensitivity}
                               onChange={(e) => setMicSensitivity(parseFloat(e.target.value))}
-                              className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-teal-600"
+                              className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-teal-600"
                             />
                             <button
                               type="button"
                               onClick={() => setMicSensitivity(1.0)}
-                              className="px-2 py-0.5 text-[10px] bg-white border border-slate-200 hover:bg-slate-50 rounded text-slate-500 font-medium transition-colors"
+                              className="px-1.5 py-0.5 text-[9px] bg-white border border-slate-200 hover:bg-slate-50 rounded text-slate-500 font-medium transition-colors"
                             >
                               リセット
                             </button>
                           </div>
-                          <p className="text-[10px] text-slate-400 leading-normal">
-                            マイク入力が小さくて認識されにくい場合は値を大きくし、ノイズが多い場合は小さくしてください。
-                          </p>
                         </div>
 
                         {/* Threshold Slider */}
-                        <div className="space-y-1">
+                        <div className="space-y-0.5">
                           <div className="flex items-center justify-between">
                             <span className="font-medium text-slate-600">ノイズゲートしきい値 (閾値):</span>
                             <span className="font-mono font-bold text-teal-600">{noiseThreshold}%</span>
@@ -2193,36 +2188,33 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                             step="1"
                             value={noiseThreshold}
                             onChange={(e) => setNoiseThreshold(parseInt(e.target.value))}
-                            className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-teal-600"
+                            className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-teal-600"
                           />
-                          <p className="text-[10px] text-slate-400 leading-normal">
-                            この値以下の音量を「ノイズ」として無視します。静かな環境では低くし、雑音が多い環境では高めに調整してください。
-                          </p>
                         </div>
 
                         {/* Device / Hardware Filters */}
-                        <div className="bg-white p-2.5 rounded-lg border border-slate-100 space-y-2">
-                          <span className="text-[10px] text-slate-400 font-bold tracking-wider uppercase">
+                        <div className="bg-white p-2 rounded-lg border border-slate-100 space-y-1">
+                          <span className="text-[9px] text-slate-400 font-bold tracking-wider uppercase">
                             デバイス側・ブラウザ内蔵フィルタ:
                           </span>
-                          <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600">
-                            <label className="flex items-center gap-1.5 cursor-pointer hover:text-slate-800">
+                          <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-600">
+                            <label className="flex items-center gap-1 cursor-pointer hover:text-slate-800">
                               <input
                                 type="checkbox"
                                 checked={enableNativeNoiseSuppression}
                                 onChange={(e) => setEnableNativeNoiseSuppression(e.target.checked)}
-                                className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 h-3.5 w-3.5"
+                                className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 h-3 w-3"
                               />
-                              <span>ノイズ抑制機能</span>
+                              <span>ノイズ抑制</span>
                             </label>
-                            <label className="flex items-center gap-1.5 cursor-pointer hover:text-slate-800">
+                            <label className="flex items-center gap-1 cursor-pointer hover:text-slate-800">
                               <input
                                 type="checkbox"
                                 checked={enableNativeEchoCancellation}
                                 onChange={(e) => setEnableNativeEchoCancellation(e.target.checked)}
-                                className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 h-3.5 w-3.5"
+                                className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 h-3 w-3"
                               />
-                              <span>エコー除去機能</span>
+                              <span>エコー除去</span>
                             </label>
                           </div>
                         </div>
@@ -2239,37 +2231,37 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
-                      className="bg-teal-50/70 border border-teal-100 rounded-xl p-3 flex flex-col gap-2 overflow-hidden"
+                      className="bg-teal-50/70 border border-teal-100 rounded-xl p-2.5 flex flex-col gap-1.5 overflow-hidden"
                     >
-                      <div className="flex items-center justify-between text-xs text-teal-700">
-                        <div className="flex items-center gap-2">
-                          <span className="relative flex h-2 w-2">
+                      <div className="flex items-center justify-between text-[11px] text-teal-700">
+                        <div className="flex items-center gap-1.5">
+                          <span className="relative flex h-1.5 w-1.5">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-teal-500"></span>
+                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-teal-500"></span>
                           </span>
-                          <span className="font-medium">音声集音中...</span>
+                          <span className="font-semibold">音声集音中...</span>
                         </div>
                         <button
                           type="button"
                           onClick={() => setIsRecording(false)}
-                          className="text-teal-500 hover:text-teal-700 font-medium"
+                          className="text-teal-500 hover:text-teal-700 font-semibold"
                         >
                           完了
                         </button>
                       </div>
                       
                       {/* Live Text Transcript */}
-                      <p className="text-xs text-slate-600 line-clamp-1 italic font-medium bg-white px-2 py-1 rounded border border-teal-50">
+                      <p className="text-[11px] text-slate-600 line-clamp-1 italic font-medium bg-white px-2 py-0.5 rounded border border-teal-50">
                         {speechFeedback}
                       </p>
 
                       {/* Visual Waveform Simulation */}
-                      <div className="flex items-end justify-center gap-1 h-8 pt-1">
+                      <div className="flex items-end justify-center gap-0.5 h-6 pt-0.5">
                         {waveHeights.map((h, i) => (
                           <div
                             key={i}
-                            className="w-1 bg-teal-500 rounded-full transition-all duration-100"
-                            style={{ height: `${h}px` }}
+                            className="w-0.5 bg-teal-500 rounded-full transition-all duration-100"
+                            style={{ height: `${h * 0.7}px` }}
                           />
                         ))}
                       </div>
@@ -2277,19 +2269,16 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                   )}
                 </AnimatePresence>
 
-                {/* Ingestion Info Box */}
-                <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-100 flex gap-2.5 text-xs text-slate-500">
-                  <Info className="h-4 w-4 text-slate-400 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-medium text-slate-700">自動構造化機能:</span>
-                    <p className="mt-0.5 leading-relaxed">
-                      AIが内容を分析し、最適なカテゴリ、日本語の要約、重要度(1-5)、行動の要不要、重要エンティティ、タグを自動で切り出します。
-                    </p>
-                  </div>
+                {/* Compact Ingestion Info Box */}
+                <div className="bg-slate-50 rounded-lg p-2 border border-slate-100 flex gap-2 text-[11px] text-slate-500 leading-normal">
+                  <Info className="h-3.5 w-3.5 text-slate-400 flex-shrink-0 mt-0.5" />
+                  <span>
+                    <strong className="text-slate-700">自動構造化機能:</strong> AIがカテゴリ、要約(日本語)、重要度(1-5)、行動の要不要、重要エンティティ、タグ等を自動で切り出します。
+                  </span>
                 </div>
 
                 {/* Form Actions */}
-                <div className="flex items-center justify-between pt-1">
+                <div className="flex items-center justify-between pt-0.5">
                   <button
                     type="button"
                     onClick={() => {
@@ -2303,16 +2292,16 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                   <button
                     type="submit"
                     disabled={isIngesting || !rawInput.trim()}
-                    className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-medium text-sm flex items-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-teal-600/10 active:scale-98"
+                    className="px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-semibold text-xs flex items-center gap-1.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-teal-600/10 active:scale-98"
                   >
                     {isIngesting ? (
                       <>
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                        <span>コンパイル中...</span>
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        <span>書き込み中...</span>
                       </>
                     ) : (
                       <>
-                        <Send className="h-4 w-4" />
+                        <Send className="h-3.5 w-3.5" />
                         <span>記憶に書き込む</span>
                       </>
                     )}
