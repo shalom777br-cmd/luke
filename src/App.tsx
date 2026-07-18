@@ -2221,6 +2221,14 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                           </div>
                         </div>
 
+                        {/* Moved Ingestion Info Box */}
+                        <div className="bg-white rounded-lg p-2 border border-slate-100 flex gap-2 text-[10px] text-slate-500 leading-normal">
+                          <Info className="h-3.5 w-3.5 text-slate-400 flex-shrink-0 mt-0.5" />
+                          <span>
+                            <strong className="text-slate-700 font-bold">自動構造化機能:</strong> AIがカテゴリ、要約(日本語)、重要度(1-5)、行動の要不要、重要エンティティ、タグ等を自動で切り出します。
+                          </span>
+                        </div>
+
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -2270,14 +2278,6 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                     </motion.div>
                   )}
                 </AnimatePresence>
-
-                {/* Compact Ingestion Info Box */}
-                <div className="bg-slate-50 rounded-lg p-2 border border-slate-100 flex gap-2 text-[11px] text-slate-500 leading-normal">
-                  <Info className="h-3.5 w-3.5 text-slate-400 flex-shrink-0 mt-0.5" />
-                  <span>
-                    <strong className="text-slate-700">自動構造化機能:</strong> AIがカテゴリ、要約(日本語)、重要度(1-5)、行動の要不要、重要エンティティ、タグ等を自動で切り出します。
-                  </span>
-                </div>
 
                 {/* Supabase Destination Table Selector */}
                 <div id="supabase-table-selector" className="border border-slate-100 rounded-lg bg-slate-50/50 p-2.5 space-y-1.5 text-xs">
