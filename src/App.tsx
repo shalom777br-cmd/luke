@@ -183,6 +183,7 @@ export default function App() {
   const [inputType, setInputType] = useState<'text' | 'voice'>('text');
   const [isIngesting, setIsIngesting] = useState(false);
   const [lastCompiledEntry, setLastCompiledEntry] = useState<MemoryEntry | null>(null);
+  const [targetSupabaseTable, setTargetSupabaseTable] = useState<string>('memory_timeline_events');
   
   // Speech recognition states
   const [isRecording, setIsRecording] = useState(false);
@@ -1175,6 +1176,7 @@ export default function App() {
           user_id: currentUser.id,
           input_type: typeToUse || inputType,
           raw_input: text,
+          target_table: targetSupabaseTable,
         }),
       });
 
@@ -2275,6 +2277,57 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                   <span>
                     <strong className="text-slate-700">自動構造化機能:</strong> AIがカテゴリ、要約(日本語)、重要度(1-5)、行動の要不要、重要エンティティ、タグ等を自動で切り出します。
                   </span>
+                </div>
+
+                {/* Supabase Destination Table Selector */}
+                <div id="supabase-table-selector" className="border border-slate-100 rounded-lg bg-slate-50/50 p-2.5 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-600 flex items-center gap-1.5">
+                      <Database className="h-3.5 w-3.5 text-teal-600" />
+                      <span>投入先SUPABASEテーブル名</span>
+                    </span>
+                    <span className="text-[10px] bg-teal-50 text-teal-700 px-2 py-0.5 rounded-full font-semibold font-mono">
+                      {targetSupabaseTable === 'custom_table_name' ? '未指定' : targetSupabaseTable}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={
+                        targetSupabaseTable === 'memory_timeline_events' ||
+                        targetSupabaseTable === 'hippocampus_logs' ||
+                        targetSupabaseTable === 'memories'
+                          ? targetSupabaseTable
+                          : 'custom_table_input'
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'custom_table_input') {
+                          setTargetSupabaseTable('custom_table_name');
+                        } else {
+                          setTargetSupabaseTable(val);
+                        }
+                      }}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 font-medium focus:border-teal-500 focus:outline-none"
+                    >
+                      <option value="memory_timeline_events">memory_timeline_events (標準: タイムライン)</option>
+                      <option value="hippocampus_logs">hippocampus_logs (海馬ログ記憶)</option>
+                      <option value="memories">memories (公開共有記憶)</option>
+                      <option value="custom_table_input">-- 直接テーブル名を指定する --</option>
+                    </select>
+                  </div>
+                  {targetSupabaseTable !== 'memory_timeline_events' &&
+                   targetSupabaseTable !== 'hippocampus_logs' &&
+                   targetSupabaseTable !== 'memories' && (
+                    <div className="pt-1 animate-in fade-in duration-200">
+                      <input
+                        type="text"
+                        placeholder="カスタムテーブル名を入力"
+                        value={targetSupabaseTable === 'custom_table_name' ? '' : targetSupabaseTable}
+                        onChange={(e) => setTargetSupabaseTable(e.target.value.trim() || 'custom_table_name')}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 font-medium focus:border-teal-500 focus:outline-none font-mono"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Form Actions */}

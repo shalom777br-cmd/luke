@@ -409,31 +409,64 @@ export class MemoryGatewayDb {
   }
 
   // Insert a new memory entry
-  async insertEntry(entry: MemoryEntry): Promise<void> {
-    const tableExists = await this.ensureTableExists();
+  async insertEntry(entry: MemoryEntry, targetTable?: string): Promise<void> {
+    const selectedTable = targetTable || 'memory_timeline_events';
 
-    if (this.mode === 'supabase' && this.supabase && tableExists) {
-      console.log(`Saving entry [${entry.category}] with importance [${entry.importance}] to Supabase memory_timeline_events...`);
-      try {
-        const orderNo = await this.getNextOrderNo();
-        const mappedRow = await this.mapEntryToTimelineEventRow(entry, orderNo);
-        const { error } = await this.supabase
-          .from('memory_timeline_events')
-          .insert(mappedRow);
+    if (this.mode === 'supabase' && this.supabase) {
+      if (selectedTable === 'hippocampus_logs') {
+        console.log(`Saving entry directly to Supabase hippocampus_logs...`);
+        await this.insertOrUpdateHippocampusLog(entry);
+        return;
+      }
 
-        if (error) {
-          console.error('Supabase timeline events insert failed. Error details:', error);
-          console.log('Falling back to local storage for this insert to prevent data loss...');
-          this.insertEntryLocally(entry);
-        } else {
-          console.log(`Successfully saved entry to Supabase memory_timeline_events with order_no: ${orderNo}`);
-          // Put to hippocampus_logs if importance >= 4 ("高" or higher)
-          if (entry.importance >= 4) {
-            await this.insertOrUpdateHippocampusLog(entry);
+      if (selectedTable === 'memories') {
+        console.log(`Saving entry directly to Supabase memories (public table)...`);
+        await this.publishMemoryEntry({
+          title: entry.summary,
+          content: entry.raw_input,
+          category: entry.category,
+          tags: entry.tags || [],
+          occurred_at: entry.occurred_at || entry.created_at,
+          author_name: 'ルカ・ゲートウェイ'
+        });
+        return;
+      }
+
+      // Default or custom table
+      const isDefaultTable = selectedTable === 'memory_timeline_events';
+      const isCustomTable = !isDefaultTable;
+      
+      let tableValid = true;
+      if (isDefaultTable) {
+        tableValid = await this.ensureTableExists();
+      }
+
+      if (tableValid) {
+        console.log(`Saving entry [${entry.category}] with importance [${entry.importance}] to Supabase ${selectedTable}...`);
+        try {
+          const orderNo = await this.getNextOrderNo();
+          const mappedRow = await this.mapEntryToTimelineEventRow(entry, orderNo);
+          const { error } = await this.supabase
+            .from(selectedTable)
+            .insert(mappedRow);
+
+          if (error) {
+            console.error(`Supabase ${selectedTable} insert failed. Error details:`, error);
+            console.log('Falling back to local storage for this insert to prevent data loss...');
+            this.insertEntryLocally(entry);
+          } else {
+            console.log(`Successfully saved entry to Supabase ${selectedTable} with order_no: ${orderNo}`);
+            // Put to hippocampus_logs if default table and importance >= 4 ("高" or higher)
+            if (isDefaultTable && entry.importance >= 4) {
+              await this.insertOrUpdateHippocampusLog(entry);
+            }
           }
+        } catch (err: any) {
+          console.error(`Supabase insert exception on table ${selectedTable}:`, err);
+          this.insertEntryLocally(entry);
         }
-      } catch (err: any) {
-        console.error('Supabase insert exception:', err);
+      } else {
+        console.warn(`Table verification failed for ${selectedTable}, falling back to local.`);
         this.insertEntryLocally(entry);
       }
     } else {

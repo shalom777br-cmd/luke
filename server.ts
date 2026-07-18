@@ -72,14 +72,14 @@ app.get('/api/status', async (req, res) => {
 
 // API Route: Ingest natural language voice or text
 const handleIngestLogic = async (req: any, res: any) => {
-  const { user_id, input_type, raw_input } = req.body;
+  const { user_id, input_type, raw_input, target_table } = req.body;
 
   if (!user_id || !input_type || !raw_input) {
     res.status(400).json({ error: 'Missing required parameters: user_id, input_type, or raw_input' });
     return;
   }
 
-  console.log(`Ingesting memory for user: ${user_id}, type: ${input_type}`);
+  console.log(`Ingesting memory for user: ${user_id}, type: ${input_type}, target_table: ${target_table || 'default'}`);
 
   let structured: StructuredMemory;
   let fallbackUsed = false;
@@ -130,7 +130,7 @@ const handleIngestLogic = async (req: any, res: any) => {
   };
 
   try {
-    await db.insertEntry(entry);
+    await db.insertEntry(entry, target_table);
     res.json({
       success: true,
       entry: entry,
