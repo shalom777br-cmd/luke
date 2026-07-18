@@ -2042,7 +2042,7 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                 {/* Main Textarea */}
                 <div className="relative">
                   <textarea
-                    rows={4}
+                    rows={2}
                     value={rawInput}
                     onChange={(e) => {
                       setRawInput(e.target.value);
@@ -2056,11 +2056,11 @@ create index if not exists idx_memory_timeline_events_primary_category on memory
                         ? "【音声ログ入力】下のマイクボタンを押してしゃべるか、音声入力で吹き込んでください。"
                         : "【テキスト】出来事やタスク、ひらめきなどを自由に入力してください。例：「明日15時に渋谷で打合せ。資料忘れずに。」"
                     }
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none transition-all placeholder:text-slate-400 bg-slate-50/50 resize-none leading-relaxed"
+                    className="w-full rounded-xl border border-slate-200 pl-3.5 pr-10 py-2.5 text-xs focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none transition-all placeholder:text-slate-400 bg-slate-50/50 resize-none leading-relaxed min-h-[56px]"
                   />
 
                   {/* Absolute Microphone Overlay Helper */}
-                  <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1.5">
+                  <div className="absolute bottom-1.5 right-2 flex items-center gap-1.5">
                     {recognition ? (
                       <button
                         type="button"

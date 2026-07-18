@@ -90,13 +90,6 @@ export const NoahCounseling: React.FC<NoahCounselingProps> = ({ userId, showToas
             exit={{ opacity: 0, y: -10 }}
             className="space-y-4 relative z-10"
           >
-            <div className="bg-rose-50/50 rounded-xl p-3 border border-rose-100/50 flex gap-2.5 items-start">
-              <Smile className="h-4.5 w-4.5 text-rose-500 mt-0.5 flex-shrink-0" />
-              <p className="text-xs text-rose-800 leading-relaxed font-medium">
-                「こんにちは。カウンセラーのノアです。以前は事務的なサポートをしていましたが、現在は皆さんの心身の健康や、お悩みを受け止める役割を務めています。最近、何か心がモヤモヤすることや、体調のご不安はありませんか？どんな小さなことでも、ここにそっと書き出してみてくださいね。」
-              </p>
-            </div>
-
             <form onSubmit={handleSubmit} className="space-y-3">
               <div>
                 <label htmlFor="worry-text-area" className="sr-only">悩み・モヤモヤの内容</label>
