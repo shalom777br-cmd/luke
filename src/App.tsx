@@ -244,6 +244,12 @@ export default function App() {
   // Expired future schedules detection states
   const [expiredFutureSchedules, setExpiredFutureSchedules] = useState<MemoryEntry[]>([]);
   const [hasPromptedExpiredSchedules, setHasPromptedExpiredSchedules] = useState(false);
+  const [hasCompletedPastSchedulesPrompt, setHasCompletedPastSchedulesPrompt] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('past_schedules_prompt_completed') === 'true';
+    }
+    return false;
+  });
   const [dismissedPastSchedules, setDismissedPastSchedules] = useState<string[]>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('dismissed_past_schedules');
@@ -492,6 +498,7 @@ export default function App() {
 
   // Expired future schedules detection loop
   useEffect(() => {
+    if (hasCompletedPastSchedulesPrompt) return;
     if (allCalendarEntries.length === 0 || hasPromptedExpiredSchedules) return;
 
     const now = new Date();
@@ -685,7 +692,14 @@ export default function App() {
       });
       if (res.ok) {
         showToast('success', '期限切れの予定を削除しました。');
-        setExpiredFutureSchedules((prev) => prev.filter((item) => item.id !== id));
+        setExpiredFutureSchedules((prev) => {
+          const updated = prev.filter((item) => item.id !== id);
+          if (updated.length === 0) {
+            setHasCompletedPastSchedulesPrompt(true);
+            localStorage.setItem('past_schedules_prompt_completed', 'true');
+          }
+          return updated;
+        });
         handleSearch();
         fetchTags();
         fetchCalendarEntries();
@@ -700,7 +714,14 @@ export default function App() {
 
   const handleKeepExpiredSchedule = (id: string) => {
     setDismissedPastSchedules((prev) => [...prev, id]);
-    setExpiredFutureSchedules((prev) => prev.filter((item) => item.id !== id));
+    setExpiredFutureSchedules((prev) => {
+      const updated = prev.filter((item) => item.id !== id);
+      if (updated.length === 0) {
+        setHasCompletedPastSchedulesPrompt(true);
+        localStorage.setItem('past_schedules_prompt_completed', 'true');
+      }
+      return updated;
+    });
     showToast('info', '予定をデータベースに残しました。');
   };
 
@@ -709,6 +730,8 @@ export default function App() {
     setDismissedPastSchedules((prev) => [...prev, ...ids]);
     setExpiredFutureSchedules([]);
     showToast('info', 'すべての予定をデータベースに残しました。');
+    setHasCompletedPastSchedulesPrompt(true);
+    localStorage.setItem('past_schedules_prompt_completed', 'true');
   };
 
   const handleDeleteAllExpiredSchedules = async () => {
@@ -737,6 +760,8 @@ export default function App() {
       handleSearch();
       fetchTags();
       fetchCalendarEntries();
+      setHasCompletedPastSchedulesPrompt(true);
+      localStorage.setItem('past_schedules_prompt_completed', 'true');
     } else {
       showToast('error', '削除に失敗しました。');
     }
@@ -746,6 +771,8 @@ export default function App() {
     const ids = expiredFutureSchedules.map((item) => item.id);
     setDismissedPastSchedules((prev) => [...prev, ...ids]);
     setExpiredFutureSchedules([]);
+    setHasCompletedPastSchedulesPrompt(true);
+    localStorage.setItem('past_schedules_prompt_completed', 'true');
   };
 
   const handleRecompileEntry = async (id: string) => {

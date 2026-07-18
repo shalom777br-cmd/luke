@@ -7,9 +7,9 @@ interface TimothyCalendarProps {
 }
 
 export const TimothyCalendar: React.FC<TimothyCalendarProps> = ({ entries }) => {
-  // Reference date: July 2026
-  const [currentDate, setCurrentDate] = useState<Date>(new Date(2026, 6, 7)); // 0-indexed month, so 6 is July
-  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date(2026, 6, 21)); // Highlight July 21st by default if it has an event
+  // Reference date: Real current system date
+  const [currentDate, setCurrentDate] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -42,8 +42,9 @@ export const TimothyCalendar: React.FC<TimothyCalendarProps> = ({ entries }) => 
   };
 
   const handleToday = () => {
-    setCurrentDate(new Date(2026, 6, 7)); // Jump back to July 2026 (the reference system time)
-    setSelectedDate(new Date(2026, 6, 7));
+    const today = new Date();
+    setCurrentDate(today);
+    setSelectedDate(today);
   };
 
   // Helper to format Date to YYYY-MM-DD
@@ -147,7 +148,7 @@ export const TimothyCalendar: React.FC<TimothyCalendarProps> = ({ entries }) => 
             onClick={handleToday}
             className="px-2 py-0.5 rounded text-[10px] bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold border border-indigo-200/50 transition-colors cursor-pointer"
           >
-            今日 (7/7)
+            今日 ({new Date().getMonth() + 1}/{new Date().getDate()})
           </button>
           <button
             type="button"
@@ -182,7 +183,7 @@ export const TimothyCalendar: React.FC<TimothyCalendarProps> = ({ entries }) => 
           const hasEvents = dayEvents.length > 0;
           
           const isSelected = selectedDate && formatDateString(selectedDate) === dateStr;
-          const isToday = dateStr === '2026-07-07'; // Match system mock date
+          const isToday = dateStr === formatDateString(new Date());
           
           return (
             <button

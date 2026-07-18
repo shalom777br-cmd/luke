@@ -9,7 +9,9 @@ dotenv.config();
 
 import { MemoryGatewayDb } from './src/server/db.js';
 import { getProvider } from './src/server/providers/index.js';
+import { OpenAIProvider } from './src/server/providers/OpenAIProvider.js';
 import { MemoryEntry, StructuredMemory, MemoryCategory } from './src/types.js';
+import { registerMcpRoutes } from './src/server/mcp.js';
 
 function cleanGitHubUsername(input: string): string {
   let cleaned = input.trim();
@@ -33,9 +35,13 @@ const app = express();
 // Middleware for body parsing
 app.use(express.json());
 
+// Register MCP Server SSE Routes
+registerMcpRoutes(app);
+
 // Initialize DB and AI Providers
 const db = new MemoryGatewayDb();
 const provider = getProvider();
+const noahProvider = new OpenAIProvider(); // ノアの相談室は常にChatGPTで応答
 
 // API Route: Get Database and LLM system status
 app.get('/api/status', async (req, res) => {
@@ -339,7 +345,7 @@ app.post('/api/search', async (req, res) => {
 
 // API Route: AI Counselor Noah's Counseling Room
 app.post('/api/noah/counsel', async (req, res) => {
-  const { user_id, worry_text, share_history } = req.body;
+  const { user_id, worry_text, share_history = true } = req.body;
 
   if (!user_id || !worry_text) {
     res.status(400).json({ error: 'Missing required parameters: user_id or worry_text' });
@@ -347,28 +353,77 @@ app.post('/api/noah/counsel', async (req, res) => {
   }
 
   try {
-    let healthHistory: MemoryEntry[] = [];
-    if (share_history) {
-      // Query health entries (limit to 6 for context length and accuracy)
-      const allEntries = await db.queryEntries({
+    let sharedHistory: MemoryEntry[] = [];
+
+    if (share_history && db.supabase) {
+      const { data: valueLogs } = await db.supabase
+        .from('joanna_value')
+        .select('*')
+        .order('occurred_at', { ascending: false })
+        .limit(8);
+
+      const { data: timelineLogs } = await db.supabase
+        .from('memory_timeline_events')
+        .select('*')
+        .order('event_date', { ascending: false })
+        .limit(4);
+
+      const mappedValueLogs: MemoryEntry[] = (valueLogs || []).map((row: any) => ({
+        id: row.id,
         user_id,
-        category: 'health',
-      });
-      // Sort in descending order of time or creation to get latest
-      healthHistory = [...allEntries]
+        raw_input: row.content || '',
+        input_type: 'text',
+        category: row.category || 'note',
+        summary: (row.content || '').slice(0, 40),
+        structured: {} as any,
+        tags: [],
+        search_text: '',
+        importance: row.importance || 3,
+        occurred_at: row.occurred_at,
+        created_at: row.occurred_at,
+      }));
+
+      const mappedTimelineLogs: MemoryEntry[] = (timelineLogs || []).map((row: any) => ({
+        id: row.id,
+        user_id,
+        raw_input: row.summary || row.body || row.title || '',
+        input_type: 'text',
+        category: 'faith',
+        summary: (row.title || row.summary || '').slice(0, 40),
+        structured: {} as any,
+        tags: row.categories || [],
+        search_text: '',
+        importance: 4,
+        occurred_at: row.event_date,
+        created_at: row.event_date,
+      }));
+
+      sharedHistory = [...mappedValueLogs, ...mappedTimelineLogs]
         .sort((a, b) => {
-          const timeA = a.occurred_at ? new Date(a.occurred_at).getTime() : new Date(a.created_at).getTime();
-          const timeB = b.occurred_at ? new Date(b.occurred_at).getTime() : new Date(b.created_at).getTime();
+          const timeA = a.occurred_at ? new Date(a.occurred_at).getTime() : 0;
+          const timeB = b.occurred_at ? new Date(b.occurred_at).getTime() : 0;
           return timeB - timeA;
         })
-        .slice(0, 6);
+        .slice(0, 10);
     }
 
-    const answer = await provider.counselWithNoah(worry_text, healthHistory);
-    res.json({
-      success: true,
-      answer,
-    });
+    const answer = await noahProvider.counselWithNoah(worry_text, sharedHistory);
+
+    if (db.supabase) {
+      try {
+        await db.supabase.from('save_noah_session_summary').insert({
+          worry_text,
+          answer_text: answer,
+          content: `${worry_text}\n---\n${answer}`,
+          category: 'health',
+          source: 'Luke/Noah Counsel (ChatGPT)',
+        });
+      } catch (saveErr) {
+        console.error('Failed to save Noah session summary:', saveErr);
+      }
+    }
+
+    res.json({ success: true, answer });
   } catch (err) {
     console.error('Noah counseling failed:', err);
     res.status(500).json({ error: 'Failed to process counseling request' });
